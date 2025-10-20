@@ -1,0 +1,1767 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Live Stock Check Scanner</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom styles for permanent background color persistence */
+        .scanned-row {
+            transition: background-color 0.3s ease;
+            /* Applies when scan count >= expected quantity */
+            background-color: #d1fae5; /* Light green */
+        }
+        .scanned-cell {
+            background-color: #34d399 !important; /* Tailwind green-400 */
+            color: #065f46; /* Tailwind green-900 */
+            font-weight: 600;
+        }
+        /* New style for the ephemeral flash on scan success */
+        .scan-flash {
+            background-color: #6ee7b7 !important; /* Brighter green */
+        }
+        /* NEW: Style for the ephemeral flash on scan error */
+        .scan-error-flash {
+            background-color: #fca5a5 !important; /* Bright red */
+        }
+        /* NEW: Style for the next item to scan */
+        .next-item-row {
+            border: 3px solid #f97316; /* Tailwind orange-500 */
+            box-shadow: 0 0 10px rgba(249, 115, 22, 0.5);
+            font-weight: 600;
+        }
+
+        /* Custom font for a clean look */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6;
+        }
+
+        /* Styles for printing the discrepancy list */
+        @media print {
+            body > *:not(.print-container) {
+                display: none;
+            }
+            .print-container {
+                display: block;
+                position: absolute;
+                top: 0;
+                left: 0;
+                width: 100%;
+                padding: 20px;
+            }
+            .print-table {
+                width: 100%;
+                border-collapse: collapse;
+                margin-top: 15px; /* Spacing below summary */
+            }
+            .print-table th, .print-table td {
+                border: 1px solid #ccc;
+                padding: 8px;
+                text-align: left;
+                font-size: 10pt;
+            }
+            .print-table th {
+                background-color: #f3f4f6;
+            }
+            /* Ensure the financial summary prints correctly without the dynamic styles */
+            #financial-summary-print {
+                padding: 15px;
+                border: 1px solid #ddd;
+                border-radius: 8px;
+                margin-bottom: 20px;
+            }
+        }
+    </style>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght400;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="p-4 md:p-8">
+
+    <div id="progressTracker" class="fixed top-0 left-0 right-0 z-40 p-2 bg-white shadow-xl border-b border-gray-200 hidden">
+        <div class="max-w-7xl mx-auto flex justify-between items-center text-sm font-semibold text-gray-700">
+            <span id="progressText">0% Complete (0/0 Items)</span>
+            <div class="w-1/2 bg-gray-200 rounded-full h-2.5">
+                <div id="progressBarFill" class="bg-indigo-600 h-2.5 rounded-full transition-all duration-500" style="width: 0%"></div>
+            </div>
+        </div>
+    </div>
+    <div class="max-w-7xl mx-auto bg-white shadow-xl rounded-2xl p-6 md:p-8">
+        <div class="flex justify-between items-center mb-2">
+            <div class="flex items-center space-x-3">
+                <h1 class="text-3xl font-bold text-gray-800">Live Inventory Check</h1>
+                <span id="demoModeBadge" class="hidden px-3 py-1 text-sm font-semibold rounded-full bg-yellow-100 text-yellow-800 border border-yellow-300 shadow-sm">
+                    ⚠️ DEMO DATA LOADED
+                </span>
+            </div>
+            <button
+                onclick="document.getElementById('helpModal').classList.remove('hidden')"
+                class="px-4 py-2 bg-gray-100 text-gray-700 font-semibold rounded-lg shadow-md hover:bg-gray-200 transition duration-150 text-sm"
+            >
+                How to Use
+            </button>
+        </div>
+        <p class="text-gray-500 mb-6">Scan items below to match against expected stock list. **All highlights are permanent.**</p>
+
+        <div class="mb-8 p-4 bg-gray-50 border-2 border-gray-200 rounded-xl shadow-inner">
+            <h2 class="text-xl font-semibold text-gray-700 mb-4">
+                Load New Stock List
+            </h2>
+
+            <div class="mb-4 p-4 border border-gray-300 rounded-lg bg-white shadow-sm">
+                <h3 class="text-lg font-semibold text-gray-700 mb-3">1. Review Auto-Detected Headers (Modify if needed)</h3>
+                <p class="text-xs text-gray-500 mb-3">
+                    Paste your data first, and the system will attempt to automatically fill these fields. **Ensure they are correct** before clicking 'Load Data'.
+                </p>
+                
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <div>
+                        <label for="uniqueIdHeaderNameInput" class="block text-xs font-medium text-gray-700">Unique Product/SKU Header (Required)</label>
+                        <input type="text" id="uniqueIdHeaderNameInput" value="" class="mt-1 w-full p-2 border border-gray-300 rounded-md text-sm font-mono focus:ring-indigo-500 focus:border-indigo-500" placeholder="e.g., SKU, Barcode, Model, IMEI">
+                    </div>
+                    <div>
+                        <label for="quantityHeaderNameInput" class="block text-xs font-medium text-gray-700">Expected Quantity Header (Optional)</label>
+                        <input type="text" id="quantityHeaderNameInput" value="" class="mt-1 w-full p-2 border border-gray-300 rounded-md text-sm font-mono focus:ring-indigo-500 focus:border-indigo-500" placeholder="e.g., Qty, Count. Leave blank for single-item asset tracking.">
+                    </div>
+                    <div>
+                        <label for="priceHeaderNameInput" class="block text-xs font-medium text-gray-700">Unit Price/Cost Header (Optional)</label>
+                        <input type="text" id="priceHeaderNameInput" value="" class="mt-1 w-full p-2 border border-gray-300 rounded-md text-sm font-mono focus:ring-indigo-500 focus:border-indigo-500" placeholder="e.g., Price, Cost, Retail">
+                    </div>
+                </div>
+            </div>
+
+            <h3 class="text-lg font-semibold text-gray-700 mb-3">2. Paste Data</h3>
+            <p class="text-sm text-gray-500 mb-3">
+                Paste your full spreadsheet data, **including the header row**, into the box below.
+            </p>
+            <textarea
+                id="stockDataTextarea"
+                rows="5"
+                class="w-full p-3 text-sm font-mono border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 transition duration-150"
+                placeholder="Paste your spreadsheet data here..."
+            ></textarea>
+            
+            <div class="flex flex-col md:flex-row space-y-2 md:space-y-0 md:space-x-3 mt-3">
+                <button
+                    id="loadDataButton"
+                    class="w-full md:w-auto px-6 py-2 bg-indigo-600 text-white font-semibold rounded-lg shadow-md hover:bg-indigo-700 focus:outline-none focus:ring-4 focus:ring-indigo-500 focus:ring-opacity-50 transition duration-150"
+                >
+                    Load Data & Clear Scans
+                </button>
+                <button
+                    id="resetAppButton"
+                    class="w-full md:w-auto px-6 py-2 bg-gray-500 text-white font-semibold rounded-lg shadow-md hover:bg-gray-600 focus:outline-none focus:ring-4 focus:ring-gray-400 focus:ring-opacity-50 transition duration-150"
+                >
+                    <svg class="w-4 h-4 inline-block mr-1 -mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0A8.003 8.003 0 0120 13c0-3.313-2.403-6.04-5.557-6.557M4 12a8 8 0 0115.418-3m-15.356 2A8.001 8.001 0 0119.418 15m0 0H15"></path></svg>
+                    Full Reset
+                </button>
+            </div>
+            <div id="loadStatusMessage" class="mt-3 text-sm font-medium h-5"></div>
+        </div>
+
+        <div class="mb-8 p-4 bg-indigo-50 border-2 border-indigo-200 rounded-xl shadow-lg">
+            
+            <div class="mb-4 p-3 bg-white border border-indigo-300 rounded-lg shadow-inner flex justify-between items-center">
+                <div>
+                    <p class="text-xs font-semibold uppercase text-indigo-600">Last Scanned Item ID (Success)</p>
+                    <p id="lastScannedDisplay" class="text-2xl font-bold font-mono text-indigo-800 break-words">N/A</p>
+                </div>
+                <button
+                    id="undoLastScanButton"
+                    class="px-4 py-2 bg-orange-500 text-white font-semibold rounded-lg shadow-md hover:bg-orange-600 focus:outline-none focus:ring-4 focus:ring-orange-400 focus:ring-opacity-50 transition duration-150 disabled:bg-gray-400 disabled:shadow-none"
+                    disabled
+                >
+                    <svg class="w-5 h-5 inline-block mr-1 -mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h11l-3-3m0 6l3-3m-9 6h11m-9 3h9l-3 3m0-6l3 3"></path></svg>
+                    Undo Last Scan
+                </button>
+            </div>
+
+            <label for="scannerInput" class="block text-lg font-semibold text-indigo-800 mb-2">
+                Scan Unique Identifier Here:
+            </label>
+            <input
+                type="text"
+                id="scannerInput"
+                class="w-full px-4 py-3 text-xl font-mono border-4 border-indigo-500 rounded-lg focus:outline-none focus:ring-4 focus:ring-indigo-300 transition duration-150"
+                placeholder="Type or scan the unique identifier and hit Enter..."
+                autofocus
+            >
+            <div id="statusMessage" class="mt-3 text-sm font-medium h-5"></div>
+        </div>
+        
+        <div class="flex flex-col md:flex-row space-y-4 md:space-y-0 md:space-x-4 mb-8">
+             <button
+                id="completeCheckButton"
+                class="w-full md:w-1/2 px-6 py-3 bg-green-600 text-white font-bold rounded-lg shadow-xl hover:bg-green-700 focus:outline-none focus:ring-4 focus:ring-green-500 focus:ring-opacity-50 transition duration-150 transform hover:scale-[1.01]"
+            >
+                Complete Check & Find Discrepancies
+            </button>
+            <button
+                id="clearAllButton"
+                onclick="confirmClearAll()"
+                class="w-full md:w-1/2 px-6 py-3 bg-red-600 text-white font-bold rounded-lg shadow-xl hover:bg-red-700 focus:outline-none focus:ring-4 focus:ring-red-500 focus:ring-opacity-50 transition duration-150 transform hover:scale-[1.01]"
+            >
+                Clear All Scans
+            </button>
+        </div>
+
+        <div class="mb-8 p-4 bg-gray-100 border-2 border-gray-200 rounded-xl shadow-inner">
+            <div class="flex items-center justify-between">
+                <label for="colleagueNameInput" class="block text-lg font-semibold text-gray-700 mb-2">
+                    Report Sign-off / Checked By:
+                </label>
+                <span id="autosaveCue" class="text-xs font-semibold text-green-600 transition-opacity duration-300 opacity-0 mb-2"></span>
+            </div>
+            <input
+                type="text"
+                id="colleagueNameInput"
+                class="w-full px-4 py-2 text-md border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 transition duration-150"
+                placeholder="Enter your name to sign off the report..."
+            >
+        </div>
+
+        <div class="flex space-x-2 mb-4 overflow-x-auto">
+            <button class="status-tab px-4 py-2 text-sm font-semibold rounded-lg bg-indigo-600 text-white shadow-md transition duration-150" data-filter="all">All Items</button>
+            <button class="status-tab px-4 py-2 text-sm font-semibold rounded-lg bg-yellow-100 text-yellow-800 hover:bg-yellow-200 transition duration-150" data-filter="pending">Pending (<span id="pendingCount">0</span>)</button>
+            <button class="status-tab px-4 py-2 text-sm font-semibold rounded-lg bg-green-100 text-green-800 hover:bg-green-200 transition duration-150" data-filter="complete">Complete (<span id="completeCount">0</span>)</button>
+            <button class="status-tab px-4 py-2 text-sm font-semibold rounded-lg bg-red-100 text-red-800 hover:bg-red-200 transition duration-150" data-filter="discrepancy">Discrepancy (<span id="discrepancyCount">0</span>)</button>
+        </div>
+        <div class="mb-4">
+            <label for="filterInput" class="block text-sm font-semibold text-gray-700 mb-2">
+                Filter Stock List (Search by ID, Product, etc.):
+            </label>
+            <input
+                type="text"
+                id="filterInput"
+                class="w-full px-4 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 transition duration-150"
+                placeholder="Start typing to filter visible rows..."
+            >
+        </div>
+
+        <div class="overflow-x-auto border border-gray-200 rounded-lg">
+            <table class="min-w-full divide-y divide-gray-200" id="stockTable">
+                <thead class="bg-gray-50 sticky top-0" id="stockTableHeader">
+                    <tr>
+                        </tr>
+                </thead>
+                <tbody class="bg-white divide-y divide-gray-200" id="stockTableBody">
+                    </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div id="helpModal" class="hidden fixed inset-0 z-50 overflow-y-auto bg-gray-900 bg-opacity-75" role="dialog" aria-modal="true">
+        <div class="flex items-center justify-center min-h-screen p-4">
+            <div class="bg-white rounded-xl shadow-2xl w-full max-w-xl p-6 transform transition-all duration-300">
+                
+                <div class="flex justify-between items-center pb-3 border-b border-gray-200">
+                    <h3 class="text-2xl font-bold text-indigo-800">How to Use This System</h3>
+                    <button onclick="document.getElementById('helpModal').classList.add('hidden')" class="text-gray-400 hover:text-gray-600 focus:outline-none">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                    </button>
+                </div>
+
+                <div class="py-4 max-h-[70vh] overflow-y-auto space-y-4 text-gray-700">
+                    
+                    <h4 class="font-semibold text-lg text-gray-900">Session Persistence & Sign-off 💾</h4>
+                    <ul class="list-disc list-inside space-y-1 ml-4 text-sm">
+                        <li>The entire state (stock list, all scans, unexpected items, and your name) is **saved locally** in your browser.</li>
+                        <li>You can close the page and reopen it to resume your work exactly where you left off.</li>
+                        <li>Use the **"Report Sign-off / Checked By"** box to enter your name for accountability. This name will appear on all printed reports.</li>
+                        <li>Use the **"Full Reset"** button next to the Load Data button to completely clear the app's memory and start fresh.</li>
+                    </ul>
+
+                    <h4 class="font-semibold text-lg text-gray-900">Step 1: Prepare Your Stock Sheet</h4>
+                    <p class="text-sm">
+                        Ensure your spreadsheet has a **header row** (the first row with column titles) and the data below it. The system automatically detects all columns.
+                    </p>
+
+                    <h4 class="font-semibold text-lg text-gray-900">Step 2: Paste Data & Review Headers</h4>
+                    <ul class="list-disc list-inside space-y-1 ml-4 text-sm">
+                        <li>Copy **all** your spreadsheet data (including the header row) and paste it into the **"2. Paste Data"** text area.</li>
+                        <li>The system will automatically **suggest headers** for the Unique ID, Quantity, and Price.</li>
+                        <li>**Crucially:** Review the suggested headers in **"1. Review Auto-Detected Headers"** and correct them if needed.</li>
+                    </ul>
+
+                    <h4 class="font-semibold text-lg text-gray-900">Step 3: Scan & Filter</h4>
+                    <ul class="list-disc list-inside space-y-1 ml-4 text-sm">
+                         <li>If you are **training or testing** the system, use the button below to load generic data.</li>
+                        <li>
+                            <button
+                                id="loadDemoButton"
+                                class="mt-2 px-5 py-2 text-sm font-semibold rounded-lg bg-yellow-600 text-white hover:bg-yellow-700 transition duration-150 shadow-md"
+                                onclick="document.getElementById('helpModal').classList.add('hidden'); initializeWithInitialData(); updateDemoBadge(); saveState(); showLoadMessage('Demo data loaded successfully. Ready for training scans.', 'text-yellow-700'); scannerInput.focus();"
+                            >
+                                Load Demo Data Now
+                            </button>
+                        </li>
+                        <li>Click the **"Load Data & Clear Scans"** button (or the Demo Data button above) to apply the list.</li>
+                        <li>Scan an item to increment its **Scanned** count. Items not found are logged as "Unexpected".</li>
+                        <li>Use the **"Filter Stock List"** box to quickly search for items by SKU, name, or any other detail.</li>
+                    </ul>
+
+                    <h4 class="font-semibold text-lg text-gray-900">Step 4: Complete Check & Reporting 📊</h4>
+                    <p class="text-sm">
+                        Click **"Complete Check & Find Discrepancies"** when finished. A modal will appear showing:
+                    </p>
+                    <ul class="list-disc list-inside space-y-1 ml-6 text-sm">
+                        <li>A **Financial Discrepancy Summary** (if a Price column was loaded).</li>
+                        <li>A list of all **Missing Items** (understocked).</li>
+                        <li>A list of all **Unexpected Items** (over-scans/unlisted items).</li>
+                        <li>Buttons to **Print** or **Export** these lists (CSV/JSON).</li>
+                    </ul>
+                </div>
+
+                <div class="pt-4 border-t border-gray-200 flex justify-end">
+                    <button 
+                        class="px-5 py-2 text-sm font-semibold rounded-lg bg-gray-200 text-gray-800 hover:bg-gray-300 transition duration-150"
+                        onclick="document.getElementById('helpModal').classList.add('hidden')"
+                    >
+                        Got It
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div id="discrepancyModal" class="hidden fixed inset-0 z-50 overflow-y-auto bg-gray-900 bg-opacity-75" role="dialog" aria-modal="true">
+        <div class="flex items-center justify-center min-h-screen p-4">
+            <div class="bg-white rounded-xl shadow-2xl w-full max-w-4xl p-6 transform transition-all duration-300">
+                
+                <div class="flex justify-between items-center pb-3 border-b border-gray-200">
+                    <h3 id="modalTitle" class="text-2xl font-bold text-gray-800">Inventory Discrepancy Report</h3>
+                    <button onclick="document.getElementById('discrepancyModal').classList.add('hidden')" class="text-gray-400 hover:text-gray-600 focus:outline-none">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                    </button>
+                </div>
+
+                <div id="modalContent" class="py-4 max-h-[70vh] overflow-y-auto">
+                    </div>
+
+                <div class="pt-4 border-t border-gray-200 flex flex-col sm:flex-row justify-end space-y-2 sm:space-y-0 sm:space-x-3 flex-wrap">
+                    <button 
+                        id="printListButton"
+                        class="px-5 py-2 text-sm font-semibold rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 transition duration-150"
+                        onclick="printMissingItems()"
+                    >
+                        Print Missing Items
+                    </button>
+                    <button 
+                        id="printUnexpectedButton"
+                        class="px-5 py-2 text-sm font-semibold rounded-lg bg-yellow-600 text-white hover:bg-yellow-700 transition duration-150"
+                        onclick="printUnexpectedList()"
+                    >
+                        Print Unexpected Items
+                    </button>
+                    <button 
+                        id="exportFullListJSONButton" 
+                        class="px-5 py-2 text-sm font-semibold rounded-lg bg-purple-600 text-white hover:bg-purple-700 transition duration-150"
+                        onclick="exportFullListJSON()"
+                    >
+                        Export Full List (JSON)
+                    </button>
+                    <button 
+                        id="exportFullListModalButton" 
+                        class="px-5 py-2 text-sm font-semibold rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition duration-150"
+                        onclick="exportFullList()"
+                    >
+                        Export Full List (CSV)
+                    </button>
+                    <button 
+                        id="exportUnexpectedButton"
+                        class="px-5 py-2 text-sm font-semibold rounded-lg bg-red-600 text-white hover:bg-red-700 transition duration-150"
+                        onclick="exportUnexpectedItems()"
+                    >
+                        Export Unexpected Items (CSV)
+                    </button>
+                    <button 
+                        class="px-5 py-2 text-sm font-semibold rounded-lg bg-gray-200 text-gray-800 hover:bg-gray-300 transition duration-150"
+                        onclick="document.getElementById('discrepancyModal').classList.add('hidden')"
+                    >
+                        Close
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script>
+        // Global array to hold the currently loaded expected stock data
+        let expectedStock = [];
+        let detectedHeaders = []; // Stores the headers detected from the pasted data
+        let lastScannedId = 'N/A'; 
+        let isDemoData = false;
+        
+        let stockMap = new Map(); // Key: Normalized Unique ID, Value: Index in expectedStock
+        let unexpectedScans = new Map(); // Key: Normalized ID, Value: { rawId: string, count: number }
+
+        // --- GLOBAL STATE FOR CURRENCY, SIGN-OFF, SORTING, AND UNDO ---
+        let detectedCurrencySymbol = '';
+        let lastFinancialSummaryHTML = ''; // Stores the HTML for printing
+        let colleagueName = ''; // Stores the name for sign-off
+        let currentSort = { key: 'index', order: 'asc' }; // NEW: Default sort by original index
+        let currentStatusFilter = 'all'; // NEW: Default filter for status tabs
+        let lastScanHistory = []; // NEW: Stores the last scan for undo: { id: string, type: 'expected' | 'unexpected', rawId: string }
+
+
+        // --- DOM ELEMENTS ---
+        const stockTableBody = document.getElementById('stockTableBody');
+        const stockTableHeader = document.getElementById('stockTableHeader');
+        const scannerInput = document.getElementById('scannerInput');
+        const statusMessage = document.getElementById('statusMessage');
+        const stockDataTextarea = document.getElementById('stockDataTextarea');
+        const loadDataButton = document.getElementById('loadDataButton');
+        const loadStatusMessage = document.getElementById('loadStatusMessage');
+        const lastScannedDisplay = document.getElementById('lastScannedDisplay');
+        const completeCheckButton = document.getElementById('completeCheckButton');
+        const clearAllButton = document.getElementById('clearAllButton');
+        const discrepancyModal = document.getElementById('discrepancyModal');
+        const modalContent = document.getElementById('modalContent');
+        const filterInput = document.getElementById('filterInput'); 
+        const demoModeBadge = document.getElementById('demoModeBadge');
+        
+        // NEW DOM Elements
+        const progressTracker = document.getElementById('progressTracker');
+        const progressBarFill = document.getElementById('progressBarFill');
+        const progressText = document.getElementById('progressText');
+        const undoButton = document.getElementById('undoLastScanButton');
+        const autosaveCue = document.getElementById('autosaveCue');
+        const statusTabs = document.querySelectorAll('.status-tab');
+        const pendingCountSpan = document.getElementById('pendingCount');
+        const completeCountSpan = document.getElementById('completeCount');
+        const discrepancyCountSpan = document.getElementById('discrepancyCount');
+
+        // Dynamic Mapping Input
+        const uniqueIdHeaderNameInput = document.getElementById('uniqueIdHeaderNameInput');
+        const quantityHeaderNameInput = document.getElementById('quantityHeaderNameInput'); 
+        const priceHeaderNameInput = document.getElementById('priceHeaderNameInput'); 
+        const colleagueNameInput = document.getElementById('colleagueNameInput');
+        
+        // --- GENERIC INITIAL DATA STRUCTURE (FOR DEMO/FIRST LOAD) ---
+        const initialStockData = [
+            { "Category": "Hardware", "Description": "Desktop PC - Model 7", "Asset ID": "PC-D7-4822", "Expected Quantity": "5", "Unit Price": "£1200.00", expectedQuantity: 5, scannedCount: 0, unitPrice: 1200.00, id: "PC-D7-4822", rawId: "PC-D7-4822", index: 0 },
+            { "Category": "Software", "Description": "Enterprise License Pack", "Asset ID": "SOFT-ENT-L9", "Expected Quantity": "15", "Unit Price": "€150.00", expectedQuantity: 15, scannedCount: 0, unitPrice: 150.00, id: "SOFT-ENT-L9", rawId: "SOFT-ENT-L9", index: 1 },
+            { "Category": "Consumable", "Description": "A4 Paper Pack - White", "Asset ID": "CON-PAP-A4", "Expected Quantity": "50", "Unit Price": "2.50", expectedQuantity: 50, scannedCount: 0, unitPrice: 2.50, id: "CON-PAP-A4", rawId: "CON-PAP-A4", index: 2 },
+            { "Category": "Tool", "Description": "Digital Multimeter", "Asset ID": "TOOL-DMM-01", "Expected Quantity": "2", "Unit Price": "99.99", expectedQuantity: 2, scannedCount: 0, unitPrice: 99.99, id: "TOOL-DMM-01", rawId: "TOOL-DMM-01", index: 3 },
+            { "Category": "Furniture", "Description": "Ergonomic Desk Chair", "Asset ID": "FURN-CHR-ERGO", "Expected Quantity": "3", "Unit Price": "£0.00", expectedQuantity: 3, scannedCount: 0, unitPrice: 0.00, id: "FURN-CHR-ERGO", rawId: "FURN-CHR-ERGO", index: 4 },
+        ];
+        
+        const initialHeaders = ["Category", "Description", "Asset ID", "Expected Quantity", "Unit Price"];
+        // -------------------------------------------------------------------
+        
+        // --- NEW: UX FUNCTIONS ---
+
+        /**
+         * Simple success tone generator using Web Audio API.
+         */
+        function playSuccessSound() {
+            try {
+                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                const oscillator = audioContext.createOscillator();
+                const gainNode = audioContext.createGain();
+
+                oscillator.connect(gainNode);
+                gainNode.connect(audioContext.destination);
+
+                oscillator.type = 'sine';
+                oscillator.frequency.setValueAtTime(500, audioContext.currentTime);
+                gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+
+                gainNode.gain.exponentialRampToValueAtTime(0.0001, audioContext.currentTime + 0.15);
+                oscillator.start();
+                oscillator.stop(audioContext.currentTime + 0.15);
+            } catch (e) {
+                console.log("Audio API not available or failed.");
+            }
+        }
+
+        /**
+         * Simple error tone generator using Web Audio API.
+         */
+        function playErrorSound() {
+            try {
+                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                const oscillator = audioContext.createOscillator();
+                const gainNode = audioContext.createGain();
+
+                oscillator.connect(gainNode);
+                gainNode.connect(audioContext.destination);
+
+                oscillator.type = 'sawtooth';
+                oscillator.frequency.setValueAtTime(150, audioContext.currentTime);
+                gainNode.gain.setValueAtTime(0.5, audioContext.currentTime);
+
+                gainNode.gain.exponentialRampToValueAtTime(0.0001, audioContext.currentTime + 0.3);
+                oscillator.start();
+                oscillator.stop(audioContext.currentTime + 0.3);
+            } catch (e) {
+                console.log("Audio API not available or failed.");
+            }
+        }
+
+        /**
+         * Displays a status message and flashes the background color.
+         * @param {string} message The text to display.
+         * @param {string} colorClass Tailwind class for the text color.
+         * @param {string} flashType 'success' or 'error'.
+         */
+        function showMessage(message, colorClass, flashType = 'success') {
+            statusMessage.textContent = message;
+            statusMessage.className = `mt-3 text-sm font-medium h-5 ${colorClass}`;
+
+            // Add flash class to body
+            const flashClass = flashType === 'success' ? 'scan-flash' : 'scan-error-flash';
+            document.body.classList.add(flashClass);
+
+            clearTimeout(window.statusMessageTimeout);
+            window.statusMessageTimeout = setTimeout(() => {
+                statusMessage.textContent = '';
+                statusMessage.className = 'mt-3 text-sm font-medium h-5';
+                document.body.classList.remove('scan-flash', 'scan-error-flash');
+            }, flashType === 'success' ? 400 : 700);
+            
+            // Re-focus the input after the scan
+            scannerInput.focus();
+        }
+
+        /**
+         * Updates the persistent progress bar and text.
+         */
+        function updateProgressTracker() {
+            if (expectedStock.length === 0) {
+                progressTracker.classList.add('hidden');
+                return;
+            }
+
+            const totalItems = expectedStock.length;
+            const completedItems = expectedStock.filter(item => item.scannedCount >= item.expectedQuantity).length;
+            
+            const totalExpectedQty = expectedStock.reduce((total, item) => total + item.expectedQuantity, 0);
+            const totalScannedQty = expectedStock.reduce((total, item) => total + item.scannedCount, 0);
+
+            let uniqueItemPercentage = (completedItems / totalItems) * 100;
+            let quantityPercentage = (totalScannedQty / totalExpectedQty) * 100;
+            if (totalExpectedQty === 0) quantityPercentage = 100;
+
+            const percentage = Math.min(uniqueItemPercentage, 100);
+
+            progressTracker.classList.remove('hidden');
+            progressBarFill.style.width = `${percentage}%`;
+            progressText.textContent = `${percentage.toFixed(0)}% Items Complete (${completedItems}/${totalItems} unique items). Total Scanned: ${totalScannedQty} (Expected: ${totalExpectedQty}).`;
+            
+            // Update counts for status tabs
+            const pending = expectedStock.filter(item => item.scannedCount < item.expectedQuantity).length;
+            const complete = completedItems;
+            const discrepancy = expectedStock.filter(item => item.scannedCount !== item.expectedQuantity).length;
+            
+            pendingCountSpan.textContent = pending;
+            completeCountSpan.textContent = complete;
+            discrepancyCountSpan.textContent = discrepancy;
+
+            // Update the filter tabs' background to reflect the active filter
+            statusTabs.forEach(tab => {
+                tab.classList.remove('bg-indigo-600', 'text-white', 'hover:bg-indigo-700', 'bg-yellow-100', 'text-yellow-800', 'hover:bg-yellow-200', 'bg-green-100', 'text-green-800', 'hover:bg-green-200', 'bg-red-100', 'text-red-800', 'hover:bg-red-200');
+                if (tab.dataset.filter === currentStatusFilter) {
+                    if (currentStatusFilter === 'all') {
+                        tab.classList.add('bg-indigo-600', 'text-white');
+                    } else if (currentStatusFilter === 'pending') {
+                        tab.classList.add('bg-yellow-500', 'text-white', 'hover:bg-yellow-600');
+                    } else if (currentStatusFilter === 'complete') {
+                        tab.classList.add('bg-green-500', 'text-white', 'hover:bg-green-600');
+                    } else if (currentStatusFilter === 'discrepancy') {
+                        tab.classList.add('bg-red-500', 'text-white', 'hover:bg-red-600');
+                    }
+                } else {
+                     // Add neutral hover state for inactive tabs
+                    if (tab.dataset.filter === 'pending') tab.classList.add('bg-yellow-100', 'text-yellow-800', 'hover:bg-yellow-200');
+                    if (tab.dataset.filter === 'complete') tab.classList.add('bg-green-100', 'text-green-800', 'hover:bg-green-200');
+                    if (tab.dataset.filter === 'discrepancy') tab.classList.add('bg-red-100', 'text-red-800', 'hover:bg-red-200');
+                    if (tab.dataset.filter === 'all') tab.classList.add('bg-gray-200', 'text-gray-800', 'hover:bg-gray-300');
+                }
+            });
+        }
+        
+        // --- END NEW: UX FUNCTIONS ---
+
+
+        // --- EXISTING CORE FUNCTIONS (MODIFIED) ---
+
+        /**
+         * Saves the current state to localStorage.
+         */
+        function saveState() {
+            try {
+                const state = {
+                    expectedStock,
+                    detectedHeaders,
+                    unexpectedScans: Array.from(unexpectedScans.entries()), // Convert Map to Array for storage
+                    uniqueIdHeaderName: uniqueIdHeaderNameInput.value,
+                    quantityHeaderName: quantityHeaderNameInput.value,
+                    priceHeaderName: priceHeaderNameInput.value,
+                    detectedCurrencySymbol,
+                    colleagueName: colleagueNameInput.value,
+                    isDemoData,
+                    lastScanHistory // NEW: Save history
+                };
+                localStorage.setItem('inventoryScannerState', JSON.stringify(state));
+
+                // NEW: Auto-Save Visual Cue
+                if (autosaveCue) {
+                    autosaveCue.textContent = '✅ Saved';
+                    autosaveCue.classList.remove('opacity-0');
+                    autosaveCue.classList.add('opacity-100');
+                    
+                    clearTimeout(window.autosaveTimeout);
+                    window.autosaveTimeout = setTimeout(() => {
+                        autosaveCue.classList.remove('opacity-100');
+                        autosaveCue.classList.add('opacity-0');
+                    }, 1500);
+                }
+
+            } catch (error) {
+                console.error('Error saving state to local storage:', error);
+            }
+        }
+
+        /**
+         * Loads state from localStorage.
+         */
+        function loadState() {
+            try {
+                const savedState = localStorage.getItem('inventoryScannerState');
+                if (savedState) {
+                    const state = JSON.parse(savedState);
+                    expectedStock = state.expectedStock || [];
+                    detectedHeaders = state.detectedHeaders || [];
+                    unexpectedScans = new Map(state.unexpectedScans || []); // Convert back to Map
+                    uniqueIdHeaderNameInput.value = state.uniqueIdHeaderName || '';
+                    quantityHeaderNameInput.value = state.quantityHeaderName || '';
+                    priceHeaderNameInput.value = state.priceHeaderName || '';
+                    detectedCurrencySymbol = state.detectedCurrencySymbol || '';
+                    colleagueNameInput.value = state.colleagueName || '';
+                    isDemoData = state.isDemoData || false;
+                    lastScanHistory = state.lastScanHistory || []; // NEW: Load history
+
+                    stockMap.clear();
+                    expectedStock.forEach((item, index) => {
+                         // Preserve index for "original order" sort
+                        item.index = index;
+                        stockMap.set(item.id, index);
+                    });
+                    
+                    if (expectedStock.length > 0) {
+                        renderTable();
+                        showLoadMessage(`Resumed session with ${expectedStock.length} items. Ready to scan!`, 'text-blue-600', 3000);
+                        updateProgressTracker(); // NEW
+                        updateDemoBadge();
+                        updateUndoButtonState(); // NEW
+                    }
+                } else {
+                    initializeWithInitialData();
+                }
+            } catch (error) {
+                console.warn('Could not load state from local storage. Starting fresh.', error);
+                initializeWithInitialData();
+            }
+        }
+
+        /**
+         * Handles the input from the scanner/keyboard.
+         */
+        function handleScan(event) {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                const rawScannedId = scannerInput.value.trim();
+                scannerInput.value = '';
+
+                if (expectedStock.length === 0) {
+                    playErrorSound(); // NEW
+                    showMessage('Load a stock list first using the section above.', 'text-red-500', 'error'); // MODIFIED
+                    return;
+                }
+                if (!rawScannedId) {
+                    playErrorSound(); // NEW
+                    showMessage('Input is empty.', 'text-red-500', 'error'); // MODIFIED
+                    return;
+                }
+
+                const scannedId = normalizeId(rawScannedId);
+                const itemIndex = stockMap.get(scannedId);
+                
+                let scanData = { id: scannedId, type: '', rawId: rawScannedId }; // NEW: Scan history object
+
+                if (typeof itemIndex !== 'undefined') {
+                    // ITEM FOUND IN EXPECTED LIST
+                    const matchedItem = expectedStock[itemIndex];
+                    matchedItem.scannedCount++;
+                    
+                    // NEW: Log scan to history
+                    scanData.type = 'expected';
+                    lastScanHistory.push(scanData);
+
+                    playSuccessSound(); // NEW
+
+                    let remaining = matchedItem.expectedQuantity - matchedItem.scannedCount;
+                    let statusMessageText = '';
+                    let statusMessageClass = 'text-green-600';
+                    let flashType = 'success';
+
+                    if (remaining >= 0) {
+                        statusMessageText = `SUCCESS: Item ${rawScannedId} checked in. ${remaining} remaining.`;
+                    } else if (remaining === -1) {
+                        statusMessageText = `⚠️ OVER-SCAN ALERT: Item ${rawScannedId} is now over its expected quantity of ${matchedItem.expectedQuantity}.`;
+                        statusMessageClass = 'text-red-600 font-bold';
+                        flashType = 'error';
+                    } else {
+                        statusMessageText = `⚠️ OVER-SCAN ALERT: Item ${rawScannedId} scanned again. Count is now ${matchedItem.scannedCount} (Expected ${matchedItem.expectedQuantity}).`;
+                        statusMessageClass = 'text-red-600 font-bold';
+                        flashType = 'error';
+                    }
+
+                    const rowElement = document.getElementById(`row-${scannedId}`);
+                    // ... (existing update logic for cells)
+                    if (rowElement) {
+                        // Immediately apply the flash for a fraction of a second
+                        document.body.classList.remove('scan-flash', 'scan-error-flash');
+                        document.body.classList.add(flashType === 'success' ? 'scan-flash' : 'scan-error-flash');
+                        
+                        setTimeout(() => {
+                             document.body.classList.remove('scan-flash', 'scan-error-flash');
+                        }, 50); // Flash duration is extremely short for immediate feedback
+
+                        // Apply permanent row style if completed or over-scanned
+                        if (remaining <= 0) {
+                            rowElement.classList.add('scanned-row');
+                        } else {
+                            rowElement.classList.remove('scanned-row');
+                        }
+                    }
+
+                    // Re-render the visible table rows to update all counts/statuses
+                    filterTable(null, true); 
+
+                    // Update last scanned display
+                    lastScannedId = rawScannedId;
+                    lastScannedDisplay.textContent = lastScannedId;
+
+                    showMessage(statusMessageText, statusMessageClass, flashType); // MODIFIED
+                } else {
+                    // ITEM NOT FOUND (UNEXPECTED)
+                    playErrorSound(); // NEW
+                    
+                    let scan = unexpectedScans.get(scannedId);
+                    if (!scan) {
+                        scan = { rawId: rawScannedId, count: 0 };
+                    }
+                    scan.count++;
+                    unexpectedScans.set(scannedId, scan);
+                    
+                    // NEW: Log scan to history
+                    scanData.type = 'unexpected';
+                    lastScanHistory.push(scanData);
+
+                    // NEW: Red flash for error
+                    document.body.classList.remove('scan-flash', 'scan-error-flash');
+                    document.body.classList.add('scan-error-flash');
+                    setTimeout(() => { document.body.classList.remove('scan-error-flash'); }, 100);
+
+                    lastScannedId = rawScannedId;
+                    lastScannedDisplay.textContent = lastScannedId;
+
+                    showMessage(`❌ UNEXPECTED ITEM: ${rawScannedId}. Total unexpected count for this ID: ${scan.count}.`, 'text-red-600 font-bold', 'error'); // MODIFIED
+                }
+
+                saveState();
+                updateProgressTracker(); // NEW
+                updateUndoButtonState(); // NEW
+            }
+        }
+
+        /**
+         * Clears all scanned counts and unexpected items, but keeps the expected stock list.
+         */
+        function clearAllScans() {
+            // No confirmation needed here, as it's handled by confirmClearAll wrapper
+            expectedStock.forEach(item => {
+                item.scannedCount = 0;
+            });
+            unexpectedScans.clear();
+            lastScanHistory = []; // NEW
+            lastScannedId = 'N/A';
+            lastScannedDisplay.textContent = lastScannedId;
+
+            renderTable();
+            saveState();
+            updateProgressTracker(); // NEW
+            updateUndoButtonState(); // NEW
+
+            showMessage('All scan counts and unexpected items have been cleared.', 'text-green-600');
+        }
+
+        /**
+         * Renders the expected stock data into the HTML table dynamically, incorporating sorting and filtering.
+         */
+        function renderTable() {
+            stockTableBody.innerHTML = '';
+            stockTableHeader.innerHTML = '';
+            updateTableHeadersForSorting(); // NEW: Create sortable headers
+
+            if (expectedStock.length === 0) {
+                stockTableBody.innerHTML = '<tr><td colspan="10" class="p-6 text-center text-gray-500">No stock data loaded. Please use the "Load New Stock List" section above.</td></tr>';
+                progressTracker.classList.add('hidden'); // NEW
+                return;
+            }
+
+            // Apply sorting before filtering
+            let sortedList = [...expectedStock];
+
+            // Define custom sort comparison
+            sortedList.sort((a, b) => {
+                let aVal, bVal;
+                let order = currentSort.order === 'asc' ? 1 : -1;
+                
+                // Special fields for sorting
+                if (currentSort.key === 'remaining') {
+                    aVal = a.expectedQuantity - a.scannedCount;
+                    bVal = b.expectedQuantity - b.scannedCount;
+                } else if (currentSort.key === 'status') {
+                    // Prioritize: Pending > Partial > Complete/Over-scan
+                    aVal = a.scannedCount === 0 ? 0 : (a.scannedCount < a.expectedQuantity ? 1 : 2);
+                    bVal = b.scannedCount === 0 ? 0 : (b.scannedCount < b.expectedQuantity ? 1 : 2);
+                    order = currentSort.order === 'asc' ? 1 : -1; // Status should sort Pending (0) first for 'asc'
+                } else if (currentSort.key === 'scannedCount') {
+                    aVal = a.scannedCount;
+                    bVal = b.scannedCount;
+                } else if (currentSort.key === 'expectedQuantity') {
+                    aVal = a.expectedQuantity;
+                    bVal = b.expectedQuantity;
+                } else if (currentSort.key === 'index') {
+                    aVal = a.index;
+                    bVal = b.index;
+                } else {
+                    // Generic sort for custom headers
+                    aVal = (a[currentSort.key] || '').toString().toLowerCase();
+                    bVal = (b[currentSort.key] || '').toString().toLowerCase();
+                }
+
+                if (typeof aVal === 'string' && typeof bVal === 'string') {
+                    return aVal.localeCompare(bVal) * order;
+                }
+                return (aVal - bVal) * order;
+            });
+
+            let nextItemRowId = null; // NEW: ID of the row to highlight as "next item"
+            let firstPendingFound = false;
+
+            sortedList.forEach(item => {
+                const row = stockTableBody.insertRow();
+                row.id = `row-${item.id}`;
+
+                const remaining = item.expectedQuantity - item.scannedCount;
+                const isComplete = remaining <= 0;
+                const isDiscrepancy = remaining !== 0;
+
+                // Apply Status Filter
+                const searchFilter = filterInput.value.trim().toUpperCase();
+                const textMatch = (Object.values(item).join(' ') + item.rawId).toUpperCase().includes(searchFilter);
+                
+                let isVisible = textMatch;
+                
+                if (currentStatusFilter !== 'all') {
+                    if (currentStatusFilter === 'pending' && item.scannedCount >= item.expectedQuantity) {
+                        isVisible = false;
+                    } else if (currentStatusFilter === 'complete' && item.scannedCount < item.expectedQuantity) {
+                        isVisible = false;
+                    } else if (currentStatusFilter === 'discrepancy' && remaining === 0) {
+                        isVisible = false;
+                    }
+                }
+
+                if (!isVisible) {
+                    row.style.display = 'none';
+                }
+
+                row.classList.add('hover:bg-gray-50');
+                row.dataset.search = (Object.values(item).join(' ') + item.rawId).toUpperCase();
+                
+                if (isComplete) {
+                    row.classList.add('scanned-row');
+                }
+
+                // NEW: Determine the Next Item to Highlight
+                if (isVisible && !firstPendingFound && remaining > 0) {
+                    nextItemRowId = row.id;
+                    firstPendingFound = true;
+                }
+                
+                const uniqueIdHeaderName = uniqueIdHeaderNameInput.value.trim();
+                detectedHeaders.forEach(header => {
+                    const cell = row.insertCell();
+                    cell.classList.add('px-3', 'py-2', 'whitespace-nowrap', 'text-sm', 'text-gray-900');
+                    cell.textContent = item[header] || '';
+
+                    if (header.toLowerCase() === uniqueIdHeaderName.toLowerCase()) {
+                        cell.id = `id-cell-${item.id}`;
+                        cell.textContent = item.rawId || item[header] || '';
+                        cell.classList.add('font-mono');
+                        if (isComplete) {
+                            cell.classList.add('scanned-cell');
+                        } else {
+                            cell.classList.add('text-gray-700');
+                        }
+                    }
+                });
+
+                // Fixed columns
+                let cell = row.insertCell();
+                cell.classList.add('px-3', 'py-2', 'whitespace-nowrap', 'text-sm', 'font-semibold', 'text-blue-700');
+                cell.textContent = item.expectedQuantity;
+                
+                cell = row.insertCell();
+                cell.id = `scanned-count-cell-${item.id}`;
+                cell.classList.add('px-3', 'py-2', 'whitespace-nowrap', 'text-sm', 'font-semibold');
+                cell.classList.add(item.scannedCount > item.expectedQuantity ? 'text-red-600' : 'text-green-600');
+                cell.textContent = item.scannedCount;
+                
+                cell = row.insertCell();
+                cell.id = `remaining-cell-${item.id}`;
+                cell.classList.add('px-3', 'py-2', 'whitespace-nowrap', 'text-sm', 'font-semibold');
+                cell.classList.add(remaining > 0 ? 'text-red-600' : 'text-green-600');
+                cell.textContent = remaining > 0 ? remaining : 0;
+                
+                cell = row.insertCell();
+                cell.id = `status-cell-${item.id}`;
+                cell.classList.add('px-3', 'py-2', 'whitespace-nowrap', 'text-sm');
+                let statusHTML = '';
+                if (remaining === item.expectedQuantity) {
+                    statusHTML = '<span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800">PENDING</span>';
+                } else if (remaining > 0) {
+                    statusHTML = '<span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-orange-100 text-orange-800">PARTIAL</span>';
+                } else if (remaining === 0) {
+                    statusHTML = '<span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-200 text-green-800 shadow-md">COMPLETE</span>';
+                } else if (remaining < 0) {
+                    statusHTML = '<span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-200 text-red-800 shadow-md">OVER-SCAN</span>';
+                }
+                cell.innerHTML = statusHTML;
+            });
+            
+            // NEW: Highlight the next item after all rows are rendered
+            if (nextItemRowId) {
+                 document.getElementById(nextItemRowId).classList.add('next-item-row');
+            }
+        }
+        
+        /**
+         * Filters the table rows based on the filter input value and current status filter.
+         */
+        function filterTable(event, noRerender = false) {
+            const filterValue = filterInput.value.trim().toUpperCase();
+            
+            // Avoid full re-render if it's just a scan update
+            if (noRerender) {
+                // If it's a quick update from scan, only update the cells of the scanned item
+                updateProgressTracker();
+                return;
+            }
+
+            if (filterValue || currentStatusFilter !== 'all') {
+                renderTable(); // Re-render to apply new sort/filter logic
+            } else {
+                // If filters are clear, simply show all rows
+                const rows = stockTableBody.querySelectorAll('tr');
+                rows.forEach(row => {
+                    row.style.display = '';
+                    row.classList.remove('next-item-row'); // Remove potential old highlight
+                });
+                // Re-apply the next item highlight using the newly filtered/visible list
+                const firstPendingRow = Array.from(rows).find(row => 
+                    row.style.display !== 'none' && 
+                    !row.classList.contains('scanned-row')
+                );
+                if (firstPendingRow) {
+                    firstPendingRow.classList.add('next-item-row');
+                }
+            }
+        }
+
+        // --- NEW: SORTING FUNCTIONS ---
+
+        /**
+         * Updates the table header row with sortable elements and attaches listeners.
+         */
+        function updateTableHeadersForSorting() {
+            stockTableHeader.innerHTML = '';
+            const headerRow = stockTableHeader.insertRow();
+
+            // Custom headers + Fixed quantity/count headers
+            const allHeaders = [...detectedHeaders, 'Expected', 'Scanned', 'Remaining', 'Status'];
+            const sortableKeys = [...detectedHeaders, 'expectedQuantity', 'scannedCount', 'remaining', 'status'];
+            
+            // Map custom headers to their internal keys (if they match the data property names)
+            const headerKeyMap = {};
+            sortableKeys.forEach((key, index) => {
+                if (index < detectedHeaders.length) {
+                    // Custom headers use the string name directly
+                    headerKeyMap[allHeaders[index]] = key; 
+                } else {
+                    // Fixed headers use their internal key
+                    headerKeyMap[allHeaders[index]] = key;
+                }
+            });
+
+            allHeaders.forEach((text, index) => {
+                const key = sortableKeys[index];
+                const th = document.createElement('th');
+                th.classList.add('px-3', 'py-3', 'text-left', 'text-xs', 'font-medium', 'text-gray-500', 'uppercase', 'tracking-wider', 'whitespace-nowrap', 'cursor-pointer', 'select-none');
+                
+                let sortIndicator = '';
+                if (currentSort.key === key) {
+                    sortIndicator = currentSort.order === 'asc' ? ' ▲' : ' ▼';
+                    th.classList.add('bg-gray-100');
+                }
+
+                th.innerHTML = text + sortIndicator;
+                th.dataset.sortKey = key; 
+                
+                th.addEventListener('click', () => {
+                    sortBy(key);
+                });
+                headerRow.appendChild(th);
+            });
+
+            // Re-apply the filter after a sort
+            filterTable();
+        }
+
+        /**
+         * Changes the sort key and order, then re-renders the table.
+         * @param {string} key The internal key to sort by.
+         */
+        function sortBy(key) {
+            if (currentSort.key === key) {
+                // Toggle order
+                currentSort.order = currentSort.order === 'asc' ? 'desc' : 'asc';
+            } else {
+                // New key, reset order to asc/default
+                currentSort.key = key;
+                currentSort.order = 'asc';
+                // For 'Remaining' and 'Status', 'desc' (largest discrepancy or pending first) is often preferred as default
+                if (key === 'remaining' || key === 'status') {
+                    currentSort.order = 'desc'; 
+                }
+            }
+            renderTable();
+            saveState();
+        }
+
+        // --- NEW: UNDO & CONFIRMATION FUNCTIONS ---
+
+        /**
+         * Reverts the effect of the last recorded scan.
+         */
+        function undoLastScan() {
+            if (lastScanHistory.length === 0) {
+                updateUndoButtonState();
+                return;
+            }
+
+            const lastScan = lastScanHistory.pop();
+            const scannedId = lastScan.id;
+            
+            if (lastScan.type === 'expected') {
+                const itemIndex = stockMap.get(scannedId);
+                if (typeof itemIndex !== 'undefined') {
+                    const matchedItem = expectedStock[itemIndex];
+                    if (matchedItem.scannedCount > 0) {
+                        matchedItem.scannedCount--;
+                        lastScannedId = matchedItem.rawId; // Keep the last scanned ID for display
+                        lastScannedDisplay.textContent = lastScannedId;
+                        showMessage(`↩️ UNDO SUCCESS: Removed 1 count for item ${lastScan.rawId}.`, 'text-blue-600');
+                    }
+                }
+            } else if (lastScan.type === 'unexpected') {
+                let scan = unexpectedScans.get(scannedId);
+                if (scan && scan.count > 0) {
+                    scan.count--;
+                    if (scan.count === 0) {
+                        unexpectedScans.delete(scannedId);
+                        showMessage(`↩️ UNDO SUCCESS: Removed the last unexpected scan for ${lastScan.rawId}.`, 'text-blue-600');
+                    } else {
+                         showMessage(`↩️ UNDO SUCCESS: Removed 1 count for unexpected item ${lastScan.rawId}. ${scan.count} remaining.`, 'text-blue-600');
+                    }
+                    lastScannedId = lastScan.rawId; // Keep the last scanned ID for display
+                    lastScannedDisplay.textContent = lastScannedId;
+                }
+            } else {
+                 showMessage(`⚠️ Undo failed: Unknown scan type in history.`, 'text-orange-500');
+            }
+
+            // Re-render, save, update UI state
+            filterTable(null, true); 
+            saveState();
+            updateProgressTracker(); 
+            updateUndoButtonState(); 
+        }
+
+        /**
+         * Toggles the disabled state of the Undo button.
+         */
+        function updateUndoButtonState() {
+            undoButton.disabled = lastScanHistory.length === 0;
+        }
+
+        /**
+         * Wraps clearAllScans with a confirmation dialog.
+         */
+        function confirmClearAll() {
+            if (confirm("⚠️ WARNING: You are about to CLEAR ALL SCANS. This will delete all scanned counts and unexpected items, but keep the loaded stock list. Are you sure you want to proceed?")) {
+                clearAllScans();
+            }
+        }
+        
+        /**
+         * Overrides the default full reset to include a confirmation.
+         */
+        function resetAppAndClearStorage() {
+             if (confirm("⚠️ WARNING: You are about to perform a FULL RESET. This will erase all stock data, all scan counts, all unexpected items, and your sign-off name. Are you sure you want to proceed?")) {
+                localStorage.removeItem('inventoryScannerState');
+                location.reload(); 
+            }
+        }
+
+        // --- NEW: STATUS FILTERING ---
+
+        /**
+         * Filters the table by a specific status type.
+         * @param {string} filter 'all', 'pending', 'complete', 'discrepancy'.
+         */
+        function filterByStatus(filter) {
+            currentStatusFilter = filter;
+            filterTable();
+            updateProgressTracker(); // Call to update the active tab visual
+        }
+        
+
+        // --- EXISTING HELPER FUNCTIONS (UNCHANGED/MINIMAL CHANGE) ---
+        
+        function normalizeId(id) {
+            return id.trim().toUpperCase();
+        }
+
+        function getCurrencySymbol(value) {
+            if (!value) return '';
+            const trimmedValue = value.trim();
+            const commonSymbols = ['£', '€', '$', '¥'];
+            for (const symbol of commonSymbols) {
+                if (trimmedValue.startsWith(symbol)) {
+                    return symbol;
+                }
+            }
+            const commonCodes = ['GBP', 'EUR', 'USD', 'AUD', 'CAD', 'JPY'];
+            for (const code of commonCodes) {
+                 if (trimmedValue.toUpperCase().startsWith(code)) {
+                    return code;
+                }
+            }
+            const match = trimmedValue.match(/^[^0-9.-]/);
+            if (match && match[0].length === 1) {
+                return match[0];
+            }
+            return '';
+        }
+
+        function cleanAndParseFloat(value) {
+            if (!value) return 0;
+            const cleanedValue = value.replace(/[^0-9.-]+/g,"");
+            const parsed = parseFloat(cleanedValue);
+            return isNaN(parsed) ? 0 : parsed;
+        }
+
+        function formatValue(amount, isCurrency = false) {
+            const formattedAmount = amount.toFixed(2);
+            if (isCurrency && detectedCurrencySymbol) {
+                return `${detectedCurrencySymbol}${formattedAmount}`;
+            }
+            return formattedAmount;
+        }
+
+        function detectHeadersFromText(rawText) {
+            const lines = rawText.trim().split('\n').filter(line => line.trim() !== '');
+            if (lines.length === 0) return [];
+            const firstLine = lines[0];
+            const separator = firstLine.includes('\t') ? '\t' : ',';
+            const headerParts = firstLine.split(separator);
+            return headerParts.map(h => h.trim()).filter(h => h.length > 0);
+        }
+
+        function suggestHeaders(headers) {
+            const normalizedHeaders = headers.map(h => h.trim().toLowerCase());
+            const uniqueIdKeywords = ['asset id', 'stock code', 'sku', 'id', 'barcode', 'code', 'product id', 'model'];
+            const quantityKeywords = ['expected quantity', 'expected qty', 'qty', 'quantity', 'count', 'stock'];
+            const priceKeywords = ['unit price', 'price', 'cost', 'value', 'rate', 'retail'];
+            let suggestions = { uniqueId: '', quantity: '', price: '' };
+
+            function findMatch(keywords) {
+                for (const keyword of keywords) {
+                    const matchIndex = normalizedHeaders.findIndex(h => h.includes(keyword));
+                    if (matchIndex !== -1) {
+                        return headers[matchIndex];
+                    }
+                }
+                return '';
+            }
+
+            suggestions.uniqueId = findMatch(uniqueIdKeywords);
+            suggestions.quantity = findMatch(quantityKeywords);
+            suggestions.price = findMatch(priceKeywords);
+            
+            if (!suggestions.uniqueId && headers.length > 0) {
+                 suggestions.uniqueId = headers[0];
+            }
+            return suggestions;
+        }
+
+        function handleDataPaste() {
+            const rawData = stockDataTextarea.value.trim();
+            if (!rawData) return;
+            
+            const headers = detectHeadersFromText(rawData);
+            if (headers.length === 0) return;
+
+            const allInputsEmpty = !uniqueIdHeaderNameInput.value.trim() && !quantityHeaderNameInput.value.trim() && !priceHeaderNameInput.value.trim();
+
+            if (allInputsEmpty) {
+                const suggestions = suggestHeaders(headers);
+                
+                let detectedCount = 0;
+                
+                if (suggestions.uniqueId) {
+                    uniqueIdHeaderNameInput.value = suggestions.uniqueId;
+                    detectedCount++;
+                }
+                if (suggestions.quantity) {
+                    quantityHeaderNameInput.value = suggestions.quantity;
+                    detectedCount++;
+                }
+                if (suggestions.price) {
+                    priceHeaderNameInput.value = suggestions.price;
+                    detectedCount++;
+                }
+                
+                if (detectedCount > 0) {
+                    showLoadMessage(`✅ Auto-detected ${detectedCount} header(s). Please review the fields above and click 'Load Data'.`, 'text-blue-600');
+                } else {
+                    showLoadMessage(`⚠️ No headers auto-detected. Please manually enter the correct column header names above.`, 'text-orange-600');
+                }
+            }
+        }
+
+
+        function parseCSV(rawText, uniqueIdHeaderName, quantityHeaderName, priceHeaderName) {
+            const lines = rawText.trim().split('\n').filter(line => line.trim() !== '');
+            
+            if (lines.length < 2) { 
+                return { data: [], headers: [] };
+            }
+            
+            const firstLine = lines[0];
+            const separator = firstLine.includes('\t') ? '\t' : ',';
+            
+            const headerParts = firstLine.split(separator);
+            const headers = headerParts.map(h => h.trim()).filter(h => h.length > 0);
+            
+            const uniqueIdIndex = headers.findIndex(h => h.trim().toLowerCase() === uniqueIdHeaderName.trim().toLowerCase());
+            const quantityIndex = quantityHeaderName.trim() 
+                ? headers.findIndex(h => h.trim().toLowerCase() === quantityHeaderName.trim().toLowerCase()) 
+                : -1; 
+            const priceIndex = priceHeaderName.trim() 
+                ? headers.findIndex(h => h.trim().toLowerCase() === priceHeaderName.trim().toLowerCase()) 
+                : -1; 
+
+            if (uniqueIdIndex === -1) {
+                return { 
+                    data: [], 
+                    headers: [], 
+                    error: `Unique ID Header "${uniqueIdHeaderName}" not found in the pasted data headers.`
+                };
+            }
+            
+            const dataLines = lines.slice(1);
+            const parsedData = [];
+            const idCheckSet = new Set(); 
+            let currencyDetectedInParse = false; 
+
+            dataLines.forEach((line, index) => {
+                const parts = line.split(separator);
+                
+                if (parts.length >= headers.length) {
+                    const uniqueId = parts[uniqueIdIndex].trim();
+
+                    if (uniqueId.length > 0) {
+                        const normalizedId = normalizeId(uniqueId); 
+
+                        if (idCheckSet.has(normalizedId)) {
+                            console.warn(`Skipping data line ${index + 1}: Duplicate ID detected for ${uniqueId}. Only the first instance is used.`);
+                            return; 
+                        }
+                        idCheckSet.add(normalizedId);
+                        
+                        let expectedQty = 1; 
+                        if (quantityIndex !== -1 && parts[quantityIndex]) {
+                            const parsedQty = parseInt(parts[quantityIndex].trim());
+                            expectedQty = isNaN(parsedQty) || parsedQty < 1 ? 1 : parsedQty;
+                        }
+                        
+                        let unitPrice = 0;
+                        if (priceIndex !== -1 && parts[priceIndex]) {
+                            const rawPrice = parts[priceIndex].trim();
+                            unitPrice = cleanAndParseFloat(rawPrice);
+                            
+                            if (!currencyDetectedInParse && unitPrice > 0) {
+                                detectedCurrencySymbol = getCurrencySymbol(rawPrice);
+                                currencyDetectedInParse = true;
+                            }
+                        }
+
+                        const item = { 
+                            expectedQuantity: expectedQty, 
+                            scannedCount: 0,
+                            unitPrice: unitPrice,
+                            index: parsedData.length // NEW: Add original index
+                        };
+                        
+                        item.id = normalizedId; 
+                        item.rawId = uniqueId; 
+
+                        headers.forEach((header, i) => {
+                            if (parts[i]) {
+                                item[header] = parts[i].trim();
+                            } else {
+                                item[header] = '';
+                            }
+                        });
+                        
+                        parsedData.push(item);
+                    } else {
+                        console.warn(`Skipping data line ${index + 1} due to empty unique ID in column: ${line}`);
+                    }
+                } else {
+                    console.warn(`Skipping data line ${index + 1} due to insufficient columns: ${line}`);
+                }
+            });
+
+            const finalHeaders = [...headers];
+            if (quantityHeaderName.trim() && !finalHeaders.map(h => h.toLowerCase()).includes(quantityHeaderName.trim().toLowerCase())) {
+                 finalHeaders.push(quantityHeaderName.trim());
+            }
+            if (priceHeaderName.trim() && !finalHeaders.map(h => h.toLowerCase()).includes(priceHeaderName.trim().toLowerCase())) {
+                 finalHeaders.push(priceHeaderName.trim());
+            }
+
+            return { data: parsedData, headers: finalHeaders };
+        }
+
+
+        function loadStockData() {
+            const rawData = stockDataTextarea.value.trim();
+            const uniqueIdHeaderName = uniqueIdHeaderNameInput.value.trim();
+            const quantityHeaderName = quantityHeaderNameInput.value.trim(); 
+            const priceHeaderName = priceHeaderNameInput.value.trim(); 
+
+            if (!uniqueIdHeaderName) {
+                showLoadMessage('ERROR: Please specify the Unique Product/SKU Header Name.', 'text-red-500');
+                return;
+            }
+
+            if (!rawData) {
+                showLoadMessage('Please paste data into the box first.', 'text-red-500');
+                return;
+            }
+
+            handleDataPaste();
+
+            detectedCurrencySymbol = ''; 
+
+            const result = parseCSV(rawData, uniqueIdHeaderName, quantityHeaderName, priceHeaderName);
+
+            if (result.error) {
+                 showLoadMessage(`ERROR: ${result.error}`, 'text-red-500');
+                 return;
+            }
+            if (result.data.length === 0) {
+                showLoadMessage('No valid stock items found. Check your pasted data and Unique ID Header Name.', 'text-red-500');
+                return;
+            }
+            
+            // NEW: Reset state fully before loading new data
+            lastScanHistory = [];
+            
+            expectedStock = result.data;
+            detectedHeaders = result.headers;
+            isDemoData = false;
+            stockMap.clear();
+            expectedStock.forEach((item, index) => { 
+                item.index = index; // Ensure index is set
+                stockMap.set(item.id, index);
+            });
+            unexpectedScans.clear();
+            stockDataTextarea.value = '';
+            lastScannedId = 'N/A';
+            lastScannedDisplay.textContent = lastScannedId;
+
+            renderTable();
+            saveState();
+            updateDemoBadge();
+            updateProgressTracker(); // NEW
+            updateUndoButtonState(); // NEW
+            
+            const totalExpectedQty = expectedStock.reduce((total, item) => total + item.expectedQuantity, 0);
+            let currencyMsg = '';
+            if (priceHeaderName && detectedCurrencySymbol) {
+                currencyMsg = ` (Detected currency: **${detectedCurrencySymbol}**).`;
+            } else if (priceHeaderName) {
+                currencyMsg = ` (Price column loaded, but no currency symbol detected. Displaying raw number).`;
+            }
+            showLoadMessage(`Successfully loaded ${expectedStock.length} unique items (${totalExpectedQty} total quantity) with ${detectedHeaders.length} columns.${currencyMsg} Ready to scan!`, 'text-green-600');
+            scannerInput.focus();
+        }
+
+        function showLoadMessage(message, colorClass, duration = 5000) {
+            if (window.loadStatusTimeout) {
+                clearTimeout(window.loadStatusTimeout);
+            }
+            loadStatusMessage.textContent = message;
+            loadStatusMessage.className = `mt-3 text-sm font-medium h-5 ${colorClass}`;
+            window.loadStatusTimeout = setTimeout(() => {
+                loadStatusMessage.textContent = '';
+                loadStatusMessage.className = 'mt-3 text-sm font-medium h-5';
+            }, duration);
+        }
+
+        function initializeWithInitialData() {
+            expectedStock = initialStockData;
+            detectedHeaders = initialHeaders;
+            isDemoData = true;
+            stockMap.clear();
+            expectedStock.forEach((item, index) => {
+                item.index = index; // Ensure index is set
+                stockMap.set(item.id, index);
+            });
+            detectedCurrencySymbol = '£'; 
+            renderTable();
+            updateDemoBadge();
+            updateProgressTracker();
+            scannerInput.focus();
+        }
+
+        function updateDemoBadge() {
+            if (isDemoData) {
+                demoModeBadge.classList.remove('hidden');
+            } else {
+                demoModeBadge.classList.add('hidden');
+            }
+        }
+
+        function exportData(data, filename) {
+            const json = JSON.stringify(data, null, 2);
+            const blob = new Blob([json], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        function convertToCSV(data, headers) {
+            const csvRows = [];
+            // 1. Headers (include fixed fields)
+            const finalHeaders = [...headers, 'Expected_Quantity', 'Scanned_Count', 'Remaining'];
+            csvRows.push(finalHeaders.join(','));
+
+            // 2. Data rows
+            for (const item of data) {
+                const values = finalHeaders.map(header => {
+                    let value = item[header];
+                    if (header === 'Expected_Quantity') value = item.expectedQuantity;
+                    if (header === 'Scanned_Count') value = item.scannedCount;
+                    if (header === 'Remaining') value = item.expectedQuantity - item.scannedCount;
+                    if (typeof value === 'string') {
+                        value = value.replace(/"/g, '""'); // Escape double quotes
+                        if (value.includes(',') || value.includes('\n')) {
+                            value = `"${value}"`; // Quote values containing commas or newlines
+                        }
+                    }
+                    return value;
+                });
+                csvRows.push(values.join(','));
+            }
+
+            return csvRows.join('\n');
+        }
+
+        function downloadCSV(data, filename) {
+            const csvFile = convertToCSV(data, detectedHeaders);
+            const blob = new Blob([csvFile], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.setAttribute('download', filename);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+        
+        function exportFullList() {
+            downloadCSV(expectedStock, `Inventory_Check_Full_List_${new Date().toISOString().slice(0, 10)}.csv`);
+        }
+
+        function exportFullListJSON() {
+            exportData(expectedStock, `Inventory_Check_Full_List_${new Date().toISOString().slice(0, 10)}.json`);
+        }
+
+        function exportUnexpectedItems() {
+            const unexpectedList = Array.from(unexpectedScans.values());
+            const unexpectedCSV = unexpectedList.map(item => `${item.rawId},${item.count}`).join('\n');
+            
+            const fullCSV = "Unique_ID,Scanned_Count\n" + unexpectedCSV;
+            
+            const blob = new Blob([fullCSV], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.setAttribute('download', `Inventory_Check_Unexpected_Items_${new Date().toISOString().slice(0, 10)}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        function createPrintContent(title, items, isUnexpected = false) {
+            let contentHTML = `
+                <div class="print-container">
+                    <h1 class="text-xl font-bold mb-3">${title}</h1>
+                    <p class="mb-3">Report Generated: ${new Date().toLocaleString()}</p>
+                    <p class="mb-5 font-semibold">Checked By: ${colleagueNameInput.value || 'N/A'}</p>
+            `;
+            
+            if (isUnexpected) {
+                contentHTML += `
+                    <table class="print-table">
+                        <thead>
+                            <tr>
+                                <th>Unique ID</th>
+                                <th>Unexpected Count</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                `;
+                items.forEach(item => {
+                    contentHTML += `
+                        <tr>
+                            <td>${item.rawId}</td>
+                            <td>${item.count}</td>
+                        </tr>
+                    `;
+                });
+                contentHTML += `
+                        </tbody>
+                    </table>
+                `;
+            } else {
+                // Missing/Overstocked List
+                const headers = [...detectedHeaders.filter(h => h.toLowerCase() !== uniqueIdHeaderNameInput.value.trim().toLowerCase()), uniqueIdHeaderNameInput.value.trim(), 'Expected', 'Scanned', 'Difference', 'Unit Price'];
+                
+                contentHTML += `
+                    <table class="print-table">
+                        <thead>
+                            <tr>
+                                ${headers.map(h => `<th>${h}</th>`).join('')}
+                            </tr>
+                        </thead>
+                        <tbody>
+                `;
+                items.forEach(item => {
+                    const difference = item.expectedQuantity - item.scannedCount;
+                    contentHTML += `
+                        <tr>
+                            ${detectedHeaders.map(h => {
+                                // Unique ID cell content
+                                if (h.toLowerCase() === uniqueIdHeaderNameInput.value.trim().toLowerCase()) {
+                                    return `<td>${item.rawId}</td>`;
+                                }
+                                return `<td>${item[h] || ''}</td>`;
+                            }).filter(h => h).join('')}
+                            <td>${item.expectedQuantity}</td>
+                            <td>${item.scannedCount}</td>
+                            <td>${difference}</td>
+                            <td>${formatValue(item.unitPrice, true)}</td>
+                        </tr>
+                    `;
+                });
+                contentHTML += `
+                        </tbody>
+                    </table>
+                `;
+            }
+            contentHTML += '</div>';
+            return contentHTML;
+        }
+
+        function printList(title, items, isUnexpected = false) {
+            const printContent = createPrintContent(title, items, isUnexpected);
+            const originalBody = document.body.innerHTML;
+            document.body.innerHTML = printContent;
+            window.print();
+            document.body.innerHTML = originalBody;
+            // Reload state after print to re-attach listeners and render UI
+            loadState(); 
+        }
+
+        function printMissingItems() {
+            const missingItems = expectedStock.filter(item => item.scannedCount < item.expectedQuantity);
+            printList('Missing Items Report (Understocked)', missingItems, false);
+        }
+
+        function printUnexpectedList() {
+            const unexpectedList = Array.from(unexpectedScans.values());
+            printList('Unexpected/Overstocked Items Report', unexpectedList, true);
+        }
+
+        function completeCheck() {
+            colleagueName = colleagueNameInput.value.trim();
+            saveState();
+
+            const missingItems = expectedStock.filter(item => item.scannedCount < item.expectedQuantity);
+            const overstockedItems = expectedStock.filter(item => item.scannedCount > item.expectedQuantity);
+            const unexpectedItems = Array.from(unexpectedScans.values());
+
+            let totalMissingValue = 0;
+            let totalOverstockValue = 0;
+            
+            missingItems.forEach(item => {
+                const missingQty = item.expectedQuantity - item.scannedCount;
+                totalMissingValue += missingQty * item.unitPrice;
+            });
+            overstockedItems.forEach(item => {
+                const overQty = item.scannedCount - item.expectedQuantity;
+                totalOverstockValue += overQty * item.unitPrice;
+            });
+            
+            const totalDiscrepancyValue = totalMissingValue + totalOverstockValue;
+
+            let html = '<div class="space-y-6">';
+
+            if (totalDiscrepancyValue > 0) {
+                 html += `
+                    <div id="financial-summary-print" class="bg-red-50 p-6 rounded-lg shadow-inner border border-red-200">
+                        <h4 class="text-xl font-bold text-red-800 mb-3">Financial Discrepancy Summary</h4>
+                        <div class="grid grid-cols-3 gap-4 text-sm font-medium">
+                            <div><span class="text-gray-500">Value of Missing Stock:</span> <span class="text-red-600 font-bold">${formatValue(totalMissingValue, true)}</span></div>
+                            <div><span class="text-gray-500">Value of Overstocked/Found Stock:</span> <span class="text-green-600 font-bold">${formatValue(totalOverstockValue, true)}</span></div>
+                            <div><span class="text-gray-500">Total Net Discrepancy (Cost):</span> <span class="text-gray-800 font-bold">${formatValue(totalDiscrepancyValue, true)}</span></div>
+                        </div>
+                        <p class="text-xs text-gray-500 mt-2">
+                            *This value assumes the 'Unit Price' is the cost/value per unit for calculation.
+                        </p>
+                    </div>
+                `;
+            } else {
+                 html += `
+                    <div class="bg-green-50 p-4 rounded-lg shadow-inner border border-green-200 text-green-800 font-medium">
+                        ✅ All expected items have been scanned or accounted for! No financial discrepancy based on loaded prices.
+                    </div>
+                `;
+            }
+
+            // Missing Items Section
+            if (missingItems.length > 0) {
+                html += `
+                    <h4 class="text-xl font-bold text-red-800 pt-4 border-t border-gray-200">Missing Items (${missingItems.length} unique items)</h4>
+                    <p class="text-sm text-gray-600 mb-3">These items were **understocked** (Expected > Scanned).</p>
+                    ${createPrintContent('Missing Items Report (Understocked)', missingItems, false).replace('<div class="print-container">', '').replace('</div>', '')}
+                `;
+            } else {
+                 html += `
+                    <h4 class="text-xl font-bold text-gray-800 pt-4 border-t border-gray-200">Missing Items</h4>
+                    <p class="text-sm text-green-600">All expected items have been scanned at least once.</p>
+                `;
+            }
+            
+            // Unexpected and Overstocked Items Section
+            const combinedUnexpected = [...overstockedItems.map(item => ({...item, isOverstock: true})), ...unexpectedItems.map(item => ({...item, isOverstock: false}))];
+            if (combinedUnexpected.length > 0) {
+                html += `
+                    <h4 class="text-xl font-bold text-yellow-800 pt-4 border-t border-gray-200">Unexpected and Overstocked Items (${combinedUnexpected.length} unique records)</h4>
+                    <p class="text-sm text-gray-600 mb-3">
+                        Items that were **overstocked** (Scanned > Expected) or were scanned but **not on the original list** (Unexpected Scans).
+                    </p>
+                `;
+                
+                // Print the overstocked expected items (using the detailed format)
+                if (overstockedItems.length > 0) {
+                    html += `<h5 class="text-lg font-bold text-yellow-800 mt-4">Expected Items (Over-Scanned)</h5>`;
+                    html += createPrintContent('Over-Scanned Items', overstockedItems, false).replace('<div class="print-container">', '').replace('</div>', '');
+                }
+
+                // Print the unexpected (not in expected list) items (using the simple format)
+                if (unexpectedItems.length > 0) {
+                    html += `<h5 class="text-lg font-bold text-yellow-800 mt-4">Unexpected Scans (Not in Initial List)</h5>`;
+                    html += createPrintContent('Unexpected Items', unexpectedItems, true).replace('<div class="print-container">', '').replace('</div>', '');
+                }
+
+            } else {
+                 html += `
+                    <h4 class="text-xl font-bold text-gray-800 pt-4 border-t border-gray-200">Unexpected Items</h4>
+                    <p class="text-sm text-green-600">No unexpected items were scanned, and all expected items were scanned exactly as expected.</p>
+                `;
+            }
+
+            html += '</div>';
+
+            modalContent.innerHTML = html;
+            document.getElementById('discrepancyModal').classList.remove('hidden');
+        }
+
+        // --- INITIALIZATION ---
+        window.onload = function() {
+            loadState(); 
+            
+            // NEW: Set up a periodic check to ensure the scanner input remains focused
+            setInterval(() => {
+                if (document.activeElement !== scannerInput) {
+                    scannerInput.focus();
+                }
+            }, 5000); 
+
+            scannerInput.addEventListener('keydown', handleScan);
+            loadDataButton.addEventListener('click', loadStockData);
+            
+            stockDataTextarea.addEventListener('input', handleDataPaste);
+            
+            completeCheckButton.addEventListener('click', completeCheck);
+            // clearAllButton now uses onclick="confirmClearAll()"
+            
+            filterInput.addEventListener('keyup', filterTable); 
+            
+            // NEW: Undo Button Listener
+            undoButton.addEventListener('click', undoLastScan);
+
+            // NEW: Status Tab Listeners
+            statusTabs.forEach(tab => {
+                tab.addEventListener('click', () => {
+                    filterByStatus(tab.dataset.filter);
+                });
+            });
+
+            // Listener for Sign-off Input to save state on every change
+            colleagueNameInput.addEventListener('input', () => {
+                saveState();
+            });
+
+            // Full Reset Button Listener (uses the resetAppAndClearStorage wrapper)
+            document.getElementById('resetAppButton').addEventListener('click', resetAppAndClearStorage);
+            
+            scannerInput.focus(); 
+        };
+
+    </script>
+</body>
+</html>
