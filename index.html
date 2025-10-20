@@ -29,6 +29,12 @@
 
         /* Styles for printing the discrepancy list */
         @media print {
+            /* FIX: Explicitly set A4 portrait size and margins */
+            @page {
+                size: A4 portrait;
+                margin: 1cm; 
+            }
+
             body > *:not(.print-container) {
                 display: none;
             }
@@ -38,18 +44,21 @@
                 top: 0;
                 left: 0;
                 width: 100%;
-                padding: 20px;
+                /* Rely on @page margin for padding */
             }
             .print-table {
                 width: 100%;
                 border-collapse: collapse;
-                margin-top: 15px; /* Spacing below summary */
+                margin-top: 15px;
+                /* FIX: Force table to fit width */
+                table-layout: fixed; 
             }
             .print-table th, .print-table td {
                 border: 1px solid #ccc;
-                padding: 8px;
+                padding: 4px 6px; /* FIX: Reduced padding */
                 text-align: left;
-                font-size: 10pt;
+                font-size: 8pt; /* FIX: Reduced font size for better fit */
+                word-break: break-word; /* Allow text to wrap/break */
             }
             .print-table th {
                 background-color: #f3f4f6;
@@ -60,6 +69,17 @@
                 border: 1px solid #ddd;
                 border-radius: 8px;
                 margin-bottom: 20px;
+            }
+             /* FIX: Reduce financial summary text size */
+            #financial-summary-print p {
+                font-size: 8pt !important;
+            }
+            #financial-summary-print h4 {
+                font-size: 12pt !important;
+            }
+            #financial-summary-print .text-xl, 
+            #financial-summary-print .text-lg {
+                font-size: 10pt !important; /* Targets the large numbers */
             }
         }
     </style>
