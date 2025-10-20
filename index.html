@@ -43,6 +43,7 @@
             body > *:not(.print-container) {
                 display: none;
             }
+            /* The print-container now holds the entire modal content for printing */
             .print-container {
                 display: block;
                 position: absolute;
@@ -50,6 +51,7 @@
                 left: 0;
                 width: 100%;
                 padding: 20px;
+                background-color: white;
             }
             .print-table {
                 width: 100%;
@@ -339,18 +341,11 @@
 
                 <div class="pt-4 border-t border-gray-200 flex flex-col sm:flex-row justify-end space-y-2 sm:space-y-0 sm:space-x-3 flex-wrap">
                     <button 
-                        id="printListButton"
-                        class="px-5 py-2 text-sm font-semibold rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 transition duration-150"
-                        onclick="printMissingItems()"
+                        id="printFullReportButton"
+                        class="px-5 py-2 text-sm font-semibold rounded-lg bg-indigo-600 text-white font-bold hover:bg-indigo-700 transition duration-150"
+                        onclick="printFullDiscrepancyReport()"
                     >
-                        Print Missing Items
-                    </button>
-                    <button 
-                        id="printUnexpectedButton"
-                        class="px-5 py-2 text-sm font-semibold rounded-lg bg-yellow-600 text-white hover:bg-yellow-700 transition duration-150"
-                        onclick="printUnexpectedList()"
-                    >
-                        Print Unexpected Items
+                        Print Full Report
                     </button>
                     <button 
                         id="exportFullListJSONButton" 
@@ -400,6 +395,14 @@
         let currentSort = { key: 'index', order: 'asc' }; // NEW: Default sort by original index
         let currentStatusFilter = 'all'; // NEW: Default filter for status tabs
         let lastScanHistory = []; // NEW: Stores the last scan for undo: { id: string, type: 'expected' | 'unexpected', rawId: string }
+        
+        // Data to be populated in completeCheck() and used by printFullDiscrepancyReport()
+        let reportData = {
+            financialSummaryHTML: '',
+            missingItems: [],
+            overstockedItems: [],
+            unexpectedItems: []
+        };
 
 
         // --- DOM ELEMENTS ---
@@ -558,10 +561,10 @@
 
             // Update the filter tabs' background to reflect the active filter
             statusTabs.forEach(tab => {
-                tab.classList.remove('bg-indigo-600', 'text-white', 'hover:bg-indigo-700', 'bg-yellow-100', 'text-yellow-800', 'hover:bg-yellow-200', 'bg-green-100', 'text-green-800', 'hover:bg-green-200', 'bg-red-100', 'text-red-800', 'hover:bg-red-200');
+                tab.classList.remove('bg-indigo-600', 'text-white', 'hover:bg-indigo-700', 'bg-yellow-100', 'text-yellow-800', 'hover:bg-yellow-200', 'bg-green-100', 'text-green-800', 'hover:bg-green-200', 'bg-red-100', 'text-red-800', 'hover:bg-red-200', 'bg-yellow-500', 'bg-green-500', 'bg-red-500', 'hover:bg-yellow-600', 'hover:bg-green-600', 'hover:bg-red-600', 'bg-gray-200', 'text-gray-800', 'hover:bg-gray-300');
                 if (tab.dataset.filter === currentStatusFilter) {
                     if (currentStatusFilter === 'all') {
-                        tab.classList.add('bg-indigo-600', 'text-white');
+                        tab.classList.add('bg-indigo-600', 'text-white', 'hover:bg-indigo-700');
                     } else if (currentStatusFilter === 'pending') {
                         tab.classList.add('bg-yellow-500', 'text-white', 'hover:bg-yellow-600');
                     } else if (currentStatusFilter === 'complete') {
@@ -1509,6 +1512,7 @@
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
+            URL.revokeObjectURL(link.href);
         }
         
         function exportFullList() {
@@ -1532,14 +1536,16 @@
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
+            URL.revokeObjectURL(link.href);
         }
 
+        /**
+         * Creates the HTML content for a printable table list (either expected or unexpected).
+         */
         function createPrintContent(title, items, isUnexpected = false) {
             let contentHTML = `
-                <div class="print-container">
-                    <h1 class="text-xl font-bold mb-3">${title}</h1>
-                    <p class="mb-3">Report Generated: ${new Date().toLocaleString()}</p>
-                    <p class="mb-5 font-semibold">Checked By: ${colleagueNameInput.value || 'N/A'}</p>
+                <div class="print-section mt-6">
+                    <h2 class="text-xl font-bold mb-3">${title}</h2>
             `;
             
             if (isUnexpected) {
@@ -1573,7 +1579,7 @@
                     <table class="print-table">
                         <thead>
                             <tr>
-                                ${headers.map(h => `<th>${h}</th>`).join('')}
+                                ${headers.map(h => `<th style="width: ${h === 'Unit Price' ? '120px' : ''}">${h}</th>`).join('')}
                             </tr>
                         </thead>
                         <tbody>
@@ -1605,24 +1611,59 @@
             return contentHTML;
         }
 
-        function printList(title, items, isUnexpected = false) {
-            const printContent = createPrintContent(title, items, isUnexpected);
+        /**
+         * New function to combine and print the full discrepancy report.
+         */
+        function printFullDiscrepancyReport() {
+            const { financialSummaryHTML, missingItems, overstockedItems, unexpectedItems } = reportData;
+            
+            let fullReportHTML = `
+                <div class="print-container">
+                    <h1 class="text-3xl font-bold mb-3">Inventory Discrepancy Report</h1>
+                    <p class="mb-1">Report Generated: ${new Date().toLocaleString()}</p>
+                    <p class="mb-5 font-semibold">Checked By: ${colleagueNameInput.value || 'N/A'}</p>
+            `;
+            
+            // 1. Financial Summary
+            fullReportHTML += financialSummaryHTML.replace('pt-4 border-t border-gray-200', '');
+
+            // 2. Missing Items Section
+            if (missingItems.length > 0) {
+                fullReportHTML += createPrintContent('1. Missing Items (Understocked)', missingItems, false);
+            } else {
+                fullReportHTML += `<div class="print-section mt-6"><h2 class="text-xl font-bold mb-3">1. Missing Items</h2><p class="text-sm text-green-600">All expected items have been scanned at least once.</p></div>`;
+            }
+            
+            // 3. Unexpected & Overstocked Items Section
+            if (overstockedItems.length > 0 || unexpectedItems.length > 0) {
+                 fullReportHTML += `
+                    <div class="print-section mt-6">
+                        <h2 class="text-xl font-bold mb-3">2. Unexpected and Overstocked Items</h2>
+                        <p class="text-sm text-gray-600 mb-3">
+                            Items that were **overstocked** (Scanned > Expected) or were scanned but **not on the original list** (Unexpected Scans).
+                        </p>
+                    </div>
+                `;
+                
+                if (overstockedItems.length > 0) {
+                    fullReportHTML += createPrintContent('2a. Expected Items (Over-Scanned)', overstockedItems, false);
+                }
+
+                if (unexpectedItems.length > 0) {
+                    fullReportHTML += createPrintContent('2b. Unexpected Scans (Not in Initial List)', unexpectedItems, true);
+                }
+            } else {
+                 fullReportHTML += `<div class="print-section mt-6"><h2 class="text-xl font-bold mb-3">2. Unexpected Items</h2><p class="text-sm text-green-600">No unexpected items were scanned, and all expected items were scanned exactly as expected.</p></div>`;
+            }
+
+            fullReportHTML += '</div>';
+            
             const originalBody = document.body.innerHTML;
-            document.body.innerHTML = printContent;
+            document.body.innerHTML = fullReportHTML;
             window.print();
             document.body.innerHTML = originalBody;
             // Reload state after print to re-attach listeners and render UI
             loadState(); 
-        }
-
-        function printMissingItems() {
-            const missingItems = expectedStock.filter(item => item.scannedCount < item.expectedQuantity);
-            printList('Missing Items Report (Understocked)', missingItems, false);
-        }
-
-        function printUnexpectedList() {
-            const unexpectedList = Array.from(unexpectedScans.values());
-            printList('Unexpected/Overstocked Items Report', unexpectedList, true);
         }
 
         function completeCheck() {
@@ -1632,6 +1673,12 @@
             const missingItems = expectedStock.filter(item => item.scannedCount < item.expectedQuantity);
             const overstockedItems = expectedStock.filter(item => item.scannedCount > item.expectedQuantity);
             const unexpectedItems = Array.from(unexpectedScans.values());
+
+            // Save items to the global report data structure for printing
+            reportData.missingItems = missingItems;
+            reportData.overstockedItems = overstockedItems;
+            reportData.unexpectedItems = unexpectedItems;
+
 
             let totalMissingValue = 0;
             let totalOverstockValue = 0;
@@ -1648,9 +1695,10 @@
             const totalDiscrepancyValue = totalMissingValue + totalOverstockValue;
 
             let html = '<div class="space-y-6">';
+            let financialHTML = '';
 
             if (totalDiscrepancyValue > 0) {
-                 html += `
+                 financialHTML = `
                     <div id="financial-summary-print" class="bg-red-50 p-6 rounded-lg shadow-inner border border-red-200">
                         <h4 class="text-xl font-bold text-red-800 mb-3">Financial Discrepancy Summary</h4>
                         <div class="grid grid-cols-3 gap-4 text-sm font-medium">
@@ -1664,19 +1712,24 @@
                     </div>
                 `;
             } else {
-                 html += `
+                 financialHTML = `
                     <div class="bg-green-50 p-4 rounded-lg shadow-inner border border-green-200 text-green-800 font-medium">
                         ✅ All expected items have been scanned or accounted for! No financial discrepancy based on loaded prices.
                     </div>
                 `;
             }
+            
+            // Save for printing
+            reportData.financialSummaryHTML = financialHTML;
+            html += financialHTML;
 
-            // Missing Items Section
+
+            // Missing Items Section (Display in Modal)
             if (missingItems.length > 0) {
                 html += `
                     <h4 class="text-xl font-bold text-red-800 pt-4 border-t border-gray-200">Missing Items (${missingItems.length} unique items)</h4>
                     <p class="text-sm text-gray-600 mb-3">These items were **understocked** (Expected > Scanned).</p>
-                    ${createPrintContent('Missing Items Report (Understocked)', missingItems, false).replace('<div class="print-container">', '').replace('</div>', '')}
+                    ${createPrintContent('Missing Items Report (Understocked)', missingItems, false).replace('<div class="print-section mt-6">', '').replace('</div>', '')}
                 `;
             } else {
                  html += `
@@ -1685,7 +1738,7 @@
                 `;
             }
             
-            // Unexpected and Overstocked Items Section
+            // Unexpected and Overstocked Items Section (Display in Modal)
             const combinedUnexpected = [...overstockedItems.map(item => ({...item, isOverstock: true})), ...unexpectedItems.map(item => ({...item, isOverstock: false}))];
             if (combinedUnexpected.length > 0) {
                 html += `
@@ -1698,13 +1751,13 @@
                 // Print the overstocked expected items (using the detailed format)
                 if (overstockedItems.length > 0) {
                     html += `<h5 class="text-lg font-bold text-yellow-800 mt-4">Expected Items (Over-Scanned)</h5>`;
-                    html += createPrintContent('Over-Scanned Items', overstockedItems, false).replace('<div class="print-container">', '').replace('</div>', '');
+                    html += createPrintContent('Over-Scanned Items', overstockedItems, false).replace('<div class="print-section mt-6">', '').replace('</div>', '');
                 }
 
                 // Print the unexpected (not in expected list) items (using the simple format)
                 if (unexpectedItems.length > 0) {
                     html += `<h5 class="text-lg font-bold text-yellow-800 mt-4">Unexpected Scans (Not in Initial List)</h5>`;
-                    html += createPrintContent('Unexpected Items', unexpectedItems, true).replace('<div class="print-container">', '').replace('</div>', '');
+                    html += createPrintContent('Unexpected Items', unexpectedItems, true).replace('<div class="print-section mt-6">', '').replace('</div>', '');
                 }
 
             } else {
