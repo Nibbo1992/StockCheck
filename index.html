@@ -27,63 +27,39 @@
             background-color: #f3f4f6;
         }
 
-        /* Styles for printing the FULL discrepancy report */
+        /* Styles for printing the discrepancy list */
         @media print {
-            body > *:not(.full-print-report) { /* <-- NEW TARGET CLASS: Hide everything except the dedicated print container */
+            body > *:not(.print-container) {
                 display: none;
             }
-            .full-print-report { /* <-- NEW PRINT CONTAINER CLASS */
+            .print-container {
                 display: block;
                 position: absolute;
                 top: 0;
                 left: 0;
                 width: 100%;
                 padding: 20px;
-                font-family: Arial, sans-serif; /* Ensure a standard readable font for print */
-                color: #000 !important; /* Force black text for contrast */
             }
             .print-table {
                 width: 100%;
                 border-collapse: collapse;
-                margin-top: 15px;
-            }
-            .print-table h2 {
-                font-size: 16pt;
-                font-weight: bold;
-                margin-top: 20px;
-                margin-bottom: 10px;
+                margin-top: 15px; /* Spacing below summary */
             }
             .print-table th, .print-table td {
-                border: 1px solid #000; /* Darker borders for better separation */
-                padding: 6px 8px; 
+                border: 1px solid #ccc;
+                padding: 8px;
                 text-align: left;
-                font-size: 11pt; /* <-- FIX: Increased font size for readability */
-                background-color: transparent !important; /* Remove light colors/highlights */
-                color: #000 !important; /* Force black text */
+                font-size: 10pt;
             }
             .print-table th {
-                background-color: #eee !important;
-                font-weight: bold;
+                background-color: #f3f4f6;
             }
-            /* Ensure the financial summary prints correctly */
+            /* Ensure the financial summary prints correctly without the dynamic styles */
             #financial-summary-print {
                 padding: 15px;
-                border: 1px solid #000;
-                border-radius: 4px;
+                border: 1px solid #ddd;
+                border-radius: 8px;
                 margin-bottom: 20px;
-            }
-            #financial-summary-print h3 {
-                font-size: 14pt;
-                font-weight: bold;
-            }
-            /* Print Status Overrides (ensure status badges are high-contrast black/white) */
-            .print-table td span {
-                background-color: transparent !important;
-                color: #000 !important;
-                border: 1px solid #555; /* Add a border for demarcation */
-                padding: 1px 4px;
-                border-radius: 4px;
-                box-shadow: none !important;
             }
         }
     </style>
@@ -323,11 +299,18 @@
 
                 <div class="pt-4 border-t border-gray-200 flex flex-col sm:flex-row justify-end space-y-2 sm:space-y-0 sm:space-x-3 flex-wrap">
                     <button 
-                        id="printFullReportButton"
-                        class="px-5 py-2 text-sm font-semibold rounded-lg bg-indigo-600 text-white font-bold hover:bg-indigo-700 transition duration-150"
-                        onclick="printFullReport()"
+                        id="printListButton"
+                        class="px-5 py-2 text-sm font-semibold rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 transition duration-150"
+                        onclick="printMissingItems()"
                     >
-                        Print Full Inventory Report
+                        Print Missing Items
+                    </button>
+                    <button 
+                        id="printUnexpectedButton"
+                        class="px-5 py-2 text-sm font-semibold rounded-lg bg-yellow-600 text-white hover:bg-yellow-700 transition duration-150"
+                        onclick="printUnexpectedList()"
+                    >
+                        Print Unexpected Items
                     </button>
                     <button 
                         id="exportFullListJSONButton" 
@@ -732,6 +715,7 @@
             expectedStock.forEach((item, index) => {
                 stockMap.set(item.id, index);
             });
+            
             unexpectedScans.clear();
             stockDataTextarea.value = '';
             lastScannedId = 'N/A';
@@ -742,6 +726,7 @@
             updateDemoBadge(); // NEW: Update the badge display
 
             const totalExpectedQty = expectedStock.reduce((total, item) => total + item.expectedQuantity, 0);
+
             let currencyMsg = '';
             if (priceHeaderName && detectedCurrencySymbol) {
                 currencyMsg = ` (Detected currency: **${detectedCurrencySymbol}**).`;
@@ -766,7 +751,7 @@
             }
 
             const headerRow = stockTableHeader.insertRow();
-
+            
             detectedHeaders.forEach(header => {
                 const th = document.createElement('th');
                 th.classList.add('px-3', 'py-3', 'text-left', 'text-xs', 'font-medium', 'text-gray-500', 'uppercase', 'tracking-wider', 'whitespace-nowrap');
@@ -787,12 +772,10 @@
             expectedStock.forEach(item => {
                 const row = stockTableBody.insertRow();
                 row.id = `row-${item.id}`;
-
                 const remaining = item.expectedQuantity - item.scannedCount;
                 const isComplete = remaining <= 0;
-
+                
                 row.classList.add('hover:bg-gray-50');
-                // Create a data attribute for fast filtering
                 row.dataset.search = Object.values(item).join(' ').toUpperCase();
 
                 if (isComplete) {
@@ -803,7 +786,7 @@
                     const cell = row.insertCell();
                     cell.classList.add('px-3', 'py-2', 'whitespace-nowrap', 'text-sm', 'text-gray-900');
                     cell.textContent = item[header] || '';
-                    
+
                     if (header.toLowerCase() === uniqueIdHeaderName.toLowerCase()) {
                         cell.id = `id-cell-${item.id}`;
                         cell.textContent = item.rawId || item[header] || '';
@@ -835,7 +818,7 @@
                 cell = row.insertCell();
                 cell.id = `status-cell-${item.id}`;
                 cell.classList.add('px-3', 'py-2', 'whitespace-nowrap', 'text-sm');
-
+                
                 let statusHTML = '';
                 if (remaining === item.expectedQuantity) {
                     statusHTML = '<span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800">PENDING</span>';
@@ -846,7 +829,6 @@
                 } else if (remaining < 0) {
                     statusHTML = '<span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-200 text-red-800 shadow-md">OVER-SCAN</span>';
                 }
-                
                 cell.innerHTML = statusHTML;
             });
         }
@@ -856,9 +838,10 @@
          */
         function handleScan(event) {
             if (event.key === 'Enter') {
-                event.preventDefault(); // Stop form submission
+                event.preventDefault();
+
                 const rawScannedId = scannerInput.value.trim();
-                scannerInput.value = ''; // Clear the input immediately
+                scannerInput.value = '';
 
                 if (expectedStock.length === 0) {
                     showMessage('Load a stock list first using the section above.', 'text-red-500');
@@ -872,28 +855,27 @@
 
                 const scannedId = normalizeId(rawScannedId);
                 const itemIndex = stockMap.get(scannedId);
-                
+
                 if (typeof itemIndex !== 'undefined') {
                     // ITEM FOUND IN EXPECTED LIST
+                    
                     const matchedItem = expectedStock[itemIndex];
                     matchedItem.scannedCount++;
 
                     let remaining = matchedItem.expectedQuantity - matchedItem.scannedCount;
-
                     let statusMessageText = '';
                     let statusMessageClass = 'text-green-600';
 
                     if (remaining >= 0) {
-                         statusMessageText = `SUCCESS: Item ${rawScannedId} checked in. ${remaining} remaining.`;
+                        statusMessageText = `SUCCESS: Item ${rawScannedId} checked in. ${remaining} remaining.`;
                     } else if (remaining === -1) {
-                         statusMessageText = `⚠️ OVER-SCAN ALERT: Item ${rawScannedId} is now over its expected quantity of ${matchedItem.expectedQuantity}.`;
-                         statusMessageClass = 'text-red-600 font-bold';
+                        statusMessageText = `⚠️ OVER-SCAN ALERT: Item ${rawScannedId} is now over its expected quantity of ${matchedItem.expectedQuantity}.`;
+                        statusMessageClass = 'text-red-600 font-bold';
                     } else {
-                         statusMessageText = `⚠️ OVER-SCAN ALERT: Item ${rawScannedId} scanned again. Count is now ${matchedItem.scannedCount} (Expected ${matchedItem.expectedQuantity}).`;
-                         statusMessageClass = 'text-red-600 font-bold';
+                        statusMessageText = `⚠️ OVER-SCAN ALERT: Item ${rawScannedId} scanned again. Count is now ${matchedItem.scannedCount} (Expected ${matchedItem.expectedQuantity}).`;
+                        statusMessageClass = 'text-red-600 font-bold';
                     }
 
-                    // Update the table row in DOM
                     const rowElement = document.getElementById(`row-${scannedId}`);
                     const idCellElement = document.getElementById(`id-cell-${scannedId}`);
                     const scannedCountCell = document.getElementById(`scanned-count-cell-${scannedId}`);
@@ -901,488 +883,426 @@
                     const statusCell = document.getElementById(`status-cell-${scannedId}`);
 
                     if (rowElement && idCellElement) {
+                        
+                        // Update the scanned count
                         scannedCountCell.textContent = matchedItem.scannedCount;
+
+                        // Update the remaining count
                         remainingCell.textContent = remaining > 0 ? remaining : 0;
-                        
-                        // Update remaining cell color
-                        remainingCell.classList.remove('text-red-600', 'text-green-600');
-                        remainingCell.classList.add(remaining > 0 ? 'text-red-600' : 'text-green-600');
-                        
-                        // Update scanned count color
-                        scannedCountCell.classList.remove('text-red-600', 'text-green-600');
-                        scannedCountCell.classList.add(matchedItem.scannedCount > matchedItem.expectedQuantity ? 'text-red-600' : 'text-green-600');
+                        remainingCell.classList.toggle('text-red-600', remaining > 0);
+                        remainingCell.classList.toggle('text-green-600', remaining <= 0);
 
-                        // Update status indicator
-                        let statusHTML = '';
-                        if (remaining === matchedItem.expectedQuantity) {
-                            statusHTML = '<span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800">PENDING</span>';
-                        } else if (remaining > 0) {
-                            statusHTML = '<span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-orange-100 text-orange-800">PARTIAL</span>';
-                        } else if (remaining === 0) {
-                            statusHTML = '<span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-200 text-green-800 shadow-md">COMPLETE</span>';
-                        } else if (remaining < 0) {
-                            statusHTML = '<span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-200 text-red-800 shadow-md">OVER-SCAN</span>';
-                        }
-                        statusCell.innerHTML = statusHTML;
-
-                        // Apply permanent highlight if completed or over-scanned
+                        // Update the row color and status cell
                         if (remaining <= 0) {
                             rowElement.classList.add('scanned-row');
                             idCellElement.classList.add('scanned-cell');
+                            statusCell.innerHTML = remaining === 0 
+                                ? '<span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-200 text-green-800 shadow-md">COMPLETE</span>'
+                                : '<span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-200 text-red-800 shadow-md">OVER-SCAN</span>';
+                            
                         } else {
                             rowElement.classList.remove('scanned-row');
                             idCellElement.classList.remove('scanned-cell');
+                            statusCell.innerHTML = '<span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-orange-100 text-orange-800">PARTIAL</span>';
                         }
-
-                        // Flash the row green briefly
-                        rowElement.classList.add('scan-flash');
-                        setTimeout(() => {
-                            rowElement.classList.remove('scan-flash');
-                        }, 300);
                         
-                    }
+                        // Flash the row for visual feedback
+                        flashRow(rowElement);
 
+                    } else {
+                        console.error('Table elements not found for ID:', scannedId);
+                    }
+                    
                     lastScannedId = rawScannedId;
                     lastScannedDisplay.textContent = lastScannedId;
+
                     showMessage(statusMessageText, statusMessageClass);
 
                 } else {
-                    // ITEM NOT FOUND IN EXPECTED LIST (UNEXPECTED)
-                    const existingItem = unexpectedScans.get(scannedId);
-                    
-                    if (existingItem) {
-                        existingItem.count++;
+                    // ITEM NOT FOUND IN EXPECTED LIST (UNEXPECTED ITEM)
+
+                    const existingScan = unexpectedScans.get(scannedId);
+                    if (existingScan) {
+                        existingScan.count++;
                     } else {
                         unexpectedScans.set(scannedId, { rawId: rawScannedId, count: 1 });
                     }
 
+                    const count = unexpectedScans.get(scannedId).count;
+                    const message = `UNEXPECTED ITEM: ID ${rawScannedId} not on list. Scanned ${count} time(s).`;
+                    
                     lastScannedId = rawScannedId;
                     lastScannedDisplay.textContent = lastScannedId;
-                    const count = existingItem ? existingItem.count : 1;
-                    showMessage(`🚨 UNEXPECTED ITEM: ${rawScannedId} scanned. Count is now ${count}.`, 'text-red-600 font-bold');
+                    
+                    showMessage(message, 'text-purple-600 font-bold');
                 }
-
+                
+                // Save state after every successful or unexpected scan
                 saveState();
             }
         }
 
         /**
-         * Clears all scan counts in expectedStock and the unexpectedScans map, and updates the UI.
+         * Clears all scanned counts and unexpected items.
          */
         function clearAllScans() {
-             if (!confirm("Are you sure you want to clear ALL scan counts and unexpected items? This action cannot be undone for the current session data.")) {
+            if (!confirm('Are you sure you want to clear ALL scans (expected items and unexpected items)? This action cannot be undone for the current session.')) {
                 return;
             }
-
             expectedStock.forEach(item => {
                 item.scannedCount = 0;
             });
             unexpectedScans.clear();
-            
             lastScannedId = 'N/A';
             lastScannedDisplay.textContent = lastScannedId;
-
             renderTable();
             saveState();
-            showMessage('All scan counts and unexpected items have been cleared.', 'text-green-600');
+            showMessage('All scan counts reset.', 'text-green-600');
             scannerInput.focus();
         }
 
         /**
-         * Calculates discrepancies, generates the report HTML, and displays the modal.
+         * Generates the financial summary HTML.
+         * Returns an object {html: string, totalMissingValue: number, totalOverValue: number}
          */
-        function completeCheck() {
-            if (expectedStock.length === 0) {
-                showMessage('Please load a stock list before running the check.', 'text-red-500');
-                return;
+        function generateFinancialSummary() {
+            const priceHeaderName = priceHeaderNameInput.value.trim(); 
+            if (!priceHeaderName) {
+                return { html: '', totalMissingValue: 0, totalOverValue: 0 };
             }
-
-            const missingItems = expectedStock.filter(item => item.scannedCount < item.expectedQuantity);
-            const unexpectedItemsArray = Array.from(unexpectedScans.values());
 
             let totalExpectedValue = 0;
             let totalScannedValue = 0;
             let totalMissingValue = 0;
             let totalOverValue = 0;
-            let hasPriceData = expectedStock.some(item => item.unitPrice > 0);
+            let totalDiscrepancyValue = 0; // The difference: Scanned - Expected
 
-            // Calculate financial summary
-            if (hasPriceData) {
-                expectedStock.forEach(item => {
-                    totalExpectedValue += item.expectedQuantity * item.unitPrice;
-                    totalScannedValue += item.scannedCount * item.unitPrice;
-                });
+            expectedStock.forEach(item => {
+                const expectedValue = item.expectedQuantity * item.unitPrice;
+                const scannedValue = item.scannedCount * item.unitPrice;
                 
-                // Calculate missing/over value from expected list
-                missingItems.forEach(item => {
-                    const missingQty = item.expectedQuantity - item.scannedCount;
-                    totalMissingValue += missingQty * item.unitPrice;
-                });
+                totalExpectedValue += expectedValue;
+                totalScannedValue += scannedValue;
+
+                const discrepancy = scannedValue - expectedValue;
+                if (discrepancy < 0) {
+                    totalMissingValue += Math.abs(discrepancy);
+                } else if (discrepancy > 0) {
+                    totalOverValue += discrepancy;
+                }
+            });
+            
+            // Add value of unexpected scans (no expected quantity, so total discrepancy is their scanned value)
+            for (const [key, value] of unexpectedScans.entries()) {
+                const item = expectedStock.find(i => i.id === key) || {}; // Look up to get unitPrice if somehow scanned item was removed from expected list (shouldn't happen, but safe).
+                const unitPrice = item.unitPrice || 0;
                 
-                // Calculate over-scanned value (items scanned > expected)
-                 expectedStock.filter(item => item.scannedCount > item.expectedQuantity).forEach(item => {
-                    const overQty = item.scannedCount - item.expectedQuantity;
-                    totalOverValue += overQty * item.unitPrice;
-                });
-            }
+                // If there's an unexpected scan, it could be a raw scan (no unit price)
+                // The current logic of unexpectedScans only stores non-expected items.
+                // However, an over-scan on an expected item is already handled in the expectedStock loop.
+                // We need to look up the unexpected item's price if it had been loaded, but the unexpected list is designed for items *not* in the expected list. 
+                // Since we don't have a database of prices for truly unexpected items, we can only tally the value of over-scanned *expected* items.
+                // The existing logic already calculates totalOverValue from expected items' over-scans. We'll leave the unexpectedScans out of the financial tally unless they are somehow tied to a price, which the current data model doesn't support for unlisted IDs.
 
-            // --- 1. FINANCIAL SUMMARY ---
-            let financialSummaryHTML = '';
-            if (hasPriceData) {
-                const totalDiscrepancyValue = (totalScannedValue - totalExpectedValue) + totalOverValue;
-
-                financialSummaryHTML = `
-                    <div class="mb-6 p-4 bg-yellow-50 border border-yellow-300 rounded-lg shadow-md" id="financial-summary-print">
-                        <h3 class="text-xl font-bold text-yellow-800 mb-3">💰 Financial Discrepancy Summary</h3>
-                        <div class="grid grid-cols-2 gap-4 text-gray-800">
-                            <div class="border-b border-yellow-200 pb-2">
-                                <p class="text-sm font-semibold">Total Expected Value (Cost)</p>
-                                <p class="text-lg font-bold text-blue-700">${formatValue(totalExpectedValue, true)}</p>
-                            </div>
-                            <div class="border-b border-yellow-200 pb-2">
-                                <p class="text-sm font-semibold">Total Scanned Value (Against Expected)</p>
-                                <p class="text-lg font-bold text-green-700">${formatValue(totalScannedValue, true)}</p>
-                            </div>
-                            <div class="pb-2">
-                                <p class="text-sm font-semibold">Value of Missing Items (Loss)</p>
-                                <p class="text-lg font-bold text-red-700">${formatValue(totalMissingValue, true)}</p>
-                            </div>
-                            <div class="pb-2">
-                                <p class="text-sm font-semibold">Net Discrepancy Value (Scanned - Expected)</p>
-                                <p class="text-xl font-extrabold ${totalDiscrepancyValue < 0 ? 'text-red-700' : 'text-green-700'}">${totalDiscrepancyValue < 0 ? '-' : ''}${formatValue(Math.abs(totalDiscrepancyValue), true)}</p>
-                            </div>
-                        </div>
-                    </div>
-                `;
-            } else {
-                 financialSummaryHTML = `
-                    <div class="mb-6 p-4 bg-gray-100 border border-gray-300 rounded-lg shadow-md" id="financial-summary-print">
-                        <h3 class="text-xl font-bold text-gray-700 mb-2">Financial Summary Not Available</h3>
-                        <p class="text-sm text-gray-500">No Unit Price/Cost column was loaded, so a financial summary cannot be calculated.</p>
-                    </div>
-                 `;
-            }
-            lastFinancialSummaryHTML = financialSummaryHTML; // Store for printing
-
-            let modalHTML = financialSummaryHTML;
-
-            // --- 2. MISSING ITEMS LIST ---
-            modalHTML += `
-                <h3 class="text-2xl font-bold text-red-700 mt-6 mb-3">🔴 Missing Items (${missingItems.length} Unique Items)</h3>
-                <p class="text-gray-600 mb-4">These items have a final scanned count less than their expected quantity.</p>
-            `;
-
-            if (missingItems.length > 0) {
-                const missingHeaders = detectedHeaders.filter(h => h.trim().toLowerCase() !== uniqueIdHeaderNameInput.value.trim().toLowerCase());
-                const headerRow = missingHeaders.map(h => `<th class="py-2 px-4 bg-red-50 text-left text-xs font-semibold text-red-800 uppercase tracking-wider">${h}</th>`).join('');
-                
-                modalHTML += `
-                    <div class="overflow-x-auto border border-red-200 rounded-lg mb-8">
-                        <table class="min-w-full divide-y divide-red-200 print-table">
-                            <thead>
-                                <tr>
-                                    ${headerRow}
-                                    <th class="py-2 px-4 bg-red-50 text-left text-xs font-semibold text-red-800 uppercase tracking-wider">Expected</th>
-                                    <th class="py-2 px-4 bg-red-50 text-left text-xs font-semibold text-red-800 uppercase tracking-wider">Scanned</th>
-                                    <th class="py-2 px-4 bg-red-50 text-left text-xs font-semibold text-red-800 uppercase tracking-wider">Missing</th>
-                                    ${hasPriceData ? '<th class="py-2 px-4 bg-red-50 text-left text-xs font-semibold text-red-800 uppercase tracking-wider">Unit Price</th>' : ''}
-                                </tr>
-                            </thead>
-                            <tbody class="bg-white divide-y divide-red-100">
-                `;
-
-                missingItems.forEach(item => {
-                    const rowData = missingHeaders.map(h => `<td class="py-2 px-4 whitespace-nowrap text-sm text-gray-800">${item[h] || ''}</td>`).join('');
-                    const missingQty = item.expectedQuantity - item.scannedCount;
-                    
-                    modalHTML += `
-                        <tr>
-                            ${rowData}
-                            <td class="py-2 px-4 whitespace-nowrap text-sm font-semibold text-blue-700">${item.expectedQuantity}</td>
-                            <td class="py-2 px-4 whitespace-nowrap text-sm font-semibold text-green-700">${item.scannedCount}</td>
-                            <td class="py-2 px-4 whitespace-nowrap text-sm font-bold text-red-700">${missingQty}</td>
-                            ${hasPriceData ? `<td class="py-2 px-4 whitespace-nowrap text-sm text-gray-800">${formatValue(item.unitPrice, true)}</td>` : ''}
-                        </tr>
-                    `;
-                });
-
-                modalHTML += '</tbody></table></div>';
-            } else {
-                modalHTML += '<p class="text-green-600 font-semibold mb-8">✅ No expected items were found to be missing!</p>';
-            }
-
-            // --- 3. UNEXPECTED ITEMS LIST ---
-            modalHTML += `
-                <h3 class="text-2xl font-bold text-orange-700 mt-6 mb-3">⚠️ Unexpected Scans (${unexpectedItemsArray.length} Unique Items)</h3>
-                <p class="text-gray-600 mb-4">These items were scanned but are not present in the expected stock list. This may indicate unlisted stock or incorrect scans.</p>
-            `;
-
-            if (unexpectedItemsArray.length > 0) {
-                 modalHTML += `
-                    <div class="overflow-x-auto border border-orange-200 rounded-lg mb-8">
-                        <table class="min-w-full divide-y divide-orange-200 print-table">
-                            <thead>
-                                <tr>
-                                    <th class="py-2 px-4 bg-orange-50 text-left text-xs font-semibold text-orange-800 uppercase tracking-wider">Unexpected ID</th>
-                                    <th class="py-2 px-4 bg-orange-50 text-left text-xs font-semibold text-orange-800 uppercase tracking-wider">Scanned Count</th>
-                                </tr>
-                            </thead>
-                            <tbody class="bg-white divide-y divide-orange-100">
-                `;
-
-                unexpectedItemsArray.forEach(item => {
-                    modalHTML += `
-                        <tr>
-                            <td class="py-2 px-4 whitespace-nowrap text-sm font-mono text-gray-800">${item.rawId}</td>
-                            <td class="py-2 px-4 whitespace-nowrap text-sm font-bold text-red-700">${item.count}</td>
-                        </tr>
-                    `;
-                });
-
-                modalHTML += '</tbody></table></div>';
-            } else {
-                modalHTML += '<p class="text-green-600 font-semibold mb-8">✅ No unexpected items were scanned!</p>';
+                // If the unexpected item ID *did* exist in a previous load but was removed, its value is 0 here.
+                // For simplicity and accuracy based on the currently loaded data, only use over-scans from expectedStock.
             }
             
+            totalDiscrepancyValue = totalScannedValue - totalExpectedValue; // Can be negative or positive
+
+            const format = (amount) => formatValue(amount, true);
+            
+            const html = `
+                <div id="financial-summary-print" class="p-6 bg-white border border-gray-300 rounded-xl shadow-lg mb-6">
+                    <h4 class="text-xl font-bold text-gray-800 mb-4">Financial Discrepancy Summary (Based on '${priceHeaderName}' column)</h4>
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                        <div class="p-3 border rounded-lg bg-indigo-50">
+                            <p class="text-sm font-medium text-indigo-700">Expected Inventory Value</p>
+                            <p class="text-xl font-bold text-indigo-800">${format(totalExpectedValue)}</p>
+                        </div>
+                        <div class="p-3 border rounded-lg bg-green-50">
+                            <p class="text-sm font-medium text-green-700">Scanned Inventory Value</p>
+                            <p class="text-xl font-bold text-green-800">${format(totalScannedValue)}</p>
+                        </div>
+                        <div class="p-3 border rounded-lg ${totalMissingValue > 0 ? 'bg-red-50' : 'bg-gray-50'}">
+                            <p class="text-sm font-medium text-red-700">Missing Value (Understocked)</p>
+                            <p class="text-xl font-bold ${totalMissingValue > 0 ? 'text-red-800' : 'text-gray-800'}">${format(totalMissingValue)}</p>
+                        </div>
+                        <div class="p-3 border rounded-lg ${totalOverValue > 0 ? 'bg-yellow-50' : 'bg-gray-50'}">
+                            <p class="text-sm font-medium text-yellow-700">Over Value (Overstocked)</p>
+                            <p class="text-xl font-bold ${totalOverValue > 0 ? 'text-yellow-800' : 'text-gray-800'}">${format(totalOverValue)}</p>
+                        </div>
+                    </div>
+                    <div class="mt-4 p-4 border rounded-lg ${totalDiscrepancyValue !== 0 ? (totalDiscrepancyValue < 0 ? 'bg-red-100' : 'bg-green-100') : 'bg-gray-100'}">
+                        <p class="text-lg font-bold ${totalDiscrepancyValue !== 0 ? (totalDiscrepancyValue < 0 ? 'text-red-900' : 'text-green-900') : 'text-gray-900'}">
+                            Net Inventory Discrepancy: ${totalDiscrepancyValue < 0 ? 'LOSS' : (totalDiscrepancyValue > 0 ? 'GAIN' : 'BALANCED')} of ${format(Math.abs(totalDiscrepancyValue))}
+                        </p>
+                    </div>
+                </div>
+            `;
+            lastFinancialSummaryHTML = html;
+            return { html: html, totalMissingValue: totalMissingValue, totalOverValue: totalOverValue };
+        }
+
+        /**
+         * Generates a common HTML table for a list of items.
+         */
+        function generateReportTable(title, data, isMissingList = true) {
+            if (data.length === 0) {
+                return `<h4 class="text-xl font-semibold text-gray-800 mb-4">${title} (${data.length} Items)</h4>
+                        <p class="text-md text-gray-600 mb-6">No items found for this list. The count is zero. ✅</p>`;
+            }
+
+            const headerRowHTML = detectedHeaders.map(h => `<th class="font-semibold text-gray-700">${h}</th>`).join('');
+            
+            let fixedHeaders = ['Expected Qty', 'Scanned Qty', 'Discrepancy'];
+            if (!isMissingList) { // For unexpected list
+                fixedHeaders = ['Count (Unexpected)'];
+            } else if (!quantityHeaderNameInput.value.trim()) {
+                 // If no quantity header was loaded, simplify fixed headers for single-item assets
+                 fixedHeaders = ['Status']; 
+            }
+
+            const fixedHeaderHTML = fixedHeaders.map(h => `<th class="font-semibold text-gray-700">${h}</th>`).join('');
+            
+            const priceHeaderName = priceHeaderNameInput.value.trim();
+            const includePrice = !!priceHeaderName; 
+
+            let priceHeaderHTML = '';
+            if (includePrice) {
+                priceHeaderHTML = `<th class="font-semibold text-gray-700">${priceHeaderName}</th>
+                                   <th class="font-semibold text-gray-700">Value Missing/Over</th>`;
+            }
+
+            const bodyRowsHTML = data.map(item => {
+                const dataCells = detectedHeaders.map(h => `<td>${item[h] || ''}</td>`).join('');
+                let fixedCells;
+                let priceCells = '';
+
+                if (isMissingList) {
+                    const discrepancy = item.expectedQuantity - item.scannedCount;
+                    
+                    let statusText = `${discrepancy} Missing`;
+                    if (!quantityHeaderNameInput.value.trim()) {
+                        statusText = discrepancy > 0 ? 'MISSING' : 'OVER-SCANNED';
+                        fixedCells = `<td>${statusText}</td>`;
+                    } else {
+                        fixedCells = `<td>${item.expectedQuantity}</td>
+                                      <td>${item.scannedCount}</td>
+                                      <td class="${discrepancy > 0 ? 'text-red-600 font-semibold' : 'text-green-600 font-semibold'}">${discrepancy}</td>`;
+                    }
+
+                    if (includePrice) {
+                        const valueDiscrepancy = discrepancy * item.unitPrice;
+                        priceCells = `<td>${formatValue(item.unitPrice, true)}</td>
+                                      <td class="${valueDiscrepancy > 0 ? 'text-red-600 font-semibold' : (valueDiscrepancy < 0 ? 'text-green-600 font-semibold' : '')}">
+                                        ${formatValue(valueDiscrepancy, true)}
+                                      </td>`;
+                    }
+
+                } else { // Unexpected List
+                    fixedCells = `<td class="font-semibold">${item.count}</td>`;
+                }
+
+                return `<tr>${dataCells}${fixedCells}${priceCells}</tr>`;
+            }).join('');
+            
+            const totalTableCols = detectedHeaders.length + fixedHeaders.length + (includePrice ? 2 : 0);
+
+            let html = `
+                <h4 class="text-xl font-semibold text-gray-800 mb-4">${title} (${data.length} Items)</h4>
+                <table class="print-table w-full border-collapse mb-8">
+                    <thead>
+                        <tr>
+                            ${headerRowHTML}
+                            ${fixedHeaderHTML}
+                            ${priceHeaderHTML}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${bodyRowsHTML}
+                    </tbody>
+                </table>
+            `;
+            
+            return html;
+        }
+
+        /**
+         * Renders the modal with discrepancy details.
+         */
+        function completeCheck() {
+            if (expectedStock.length === 0) {
+                 showMessage('Please load a stock list before completing the check.', 'text-red-500');
+                return;
+            }
+
+            // 1. Filter Missing/Over-scanned Items (from expected list)
+            let missingItems = [];
+            let overScannedItems = [];
+            expectedStock.forEach(item => {
+                const discrepancy = item.expectedQuantity - item.scannedCount;
+                if (discrepancy > 0) {
+                    // Item is understocked
+                    missingItems.push(item);
+                } else if (discrepancy < 0) {
+                    // Item is overstocked
+                    overScannedItems.push(item);
+                }
+            });
+
+            // 2. Prepare Unexpected Scans (items not in expected list)
+            const unexpectedList = Array.from(unexpectedScans.values());
+
+            // 3. Generate HTML content
+            let modalHTML = '<div class="space-y-6">';
+
+            const financialSummary = generateFinancialSummary();
+            if (financialSummary.html) {
+                modalHTML += financialSummary.html;
+            } else {
+                 modalHTML += '<p class="text-md text-gray-600 mb-6 p-4 border rounded-lg bg-gray-50">Financial summary skipped. No Price/Cost header was provided.</p>';
+            }
+
+            modalHTML += `
+                <div class="text-lg font-semibold text-gray-800 border-b pb-2 mb-4">
+                    Report Signed Off By: <span class="font-bold text-indigo-700">${colleagueNameInput.value.trim() || 'N/A (Please sign off above)'}</span>
+                </div>
+            `;
+            
+            // Missing Items
+            const missingTableHTML = generateReportTable('Missing/Understocked Items', missingItems, true);
+            modalHTML += `<div class="p-4 border border-red-300 bg-red-50 rounded-lg shadow-sm">${missingTableHTML}</div>`;
+
+            // Over-scanned Items
+            const overScannedTableHTML = generateReportTable('Over-Scanned Items (Expected ID Found, but Scanned Too Many)', overScannedItems, true);
+            modalHTML += `<div class="p-4 border border-yellow-300 bg-yellow-50 rounded-lg shadow-sm">${overScannedTableHTML}</div>`;
+
+            // Unexpected Items
+            const unexpectedTableHTML = generateReportTable('Unexpected Items (Not Found in Stock List)', unexpectedList, false);
+            modalHTML += `<div class="p-4 border border-purple-300 bg-purple-50 rounded-lg shadow-sm">${unexpectedTableHTML}</div>`;
+
+
+            modalHTML += '</div>';
 
             modalContent.innerHTML = modalHTML;
             discrepancyModal.classList.remove('hidden');
         }
 
+        // =========================================================================
+        // === FIX START: Asynchronous Print Functions ===
+        // =========================================================================
+
         /**
-         * @MODIFIED: Prints a single, comprehensive report of all sections.
+         * Helper function to create and trigger the print process, ensuring cleanup.
+         * @param {string} title The title for the print report.
+         * @param {string} tableHTML The HTML content for the discrepancy table.
+         * @param {boolean} includeFinancialSummary Whether to include the financial summary.
          */
-        function printFullReport() {
-            // 1. Get the current state
-            const name = colleagueNameInput.value.trim() || 'Unsigned';
-            const date = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-            const time = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+        function triggerPrint(title, tableHTML, includeFinancialSummary) {
+            // 1. Hide the modal to avoid printing it
+            discrepancyModal.classList.add('hidden');
 
-            // 2. Prepare the main printable container
-            let printWindow = window.open('', '_blank', 'height=800,width=1200');
-            printWindow.document.write('<html><head><title>Full Inventory Report</title>');
+            const printContainer = document.createElement('div');
+            printContainer.className = 'print-container'; 
             
-            // Copy the print styles over
-            const styleContent = document.querySelector('style').textContent;
-            printWindow.document.write(`<style>${styleContent}</style>`);
-            printWindow.document.write('</head><body>');
-            
-            // Create the full report container that the CSS targets
-            printWindow.document.write('<div class="full-print-report">'); 
-
-            // 3. Add Header and Sign-off
-            printWindow.document.write(`
-                <h1 style="font-size: 20pt; margin-bottom: 5px;">Full Inventory Check Report</h1>
-                <p style="margin-bottom: 20px; font-size: 10pt; font-weight: bold;">
-                    Date/Time: ${date} at ${time} | 
-                    Checked By: ${name}
+            let htmlContent = `
+                <h1 style="font-size: 14pt; font-weight: bold; margin-bottom: 5px;">Inventory Discrepancy Report: ${title}</h1>
+                <p style="font-size: 10pt; color: #555; margin-bottom: 15px;">
+                    Date: ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()} 
+                    | Checked By: ${colleagueNameInput.value.trim() || 'N/A'}
                 </p>
-            `);
-            
-            // 4. Add Financial Summary (if generated)
-            if (lastFinancialSummaryHTML) {
-                printWindow.document.write(`
-                    <div id="financial-summary-print" style="margin-bottom: 20px; padding: 10px; border: 1px solid #000;">
-                        ${lastFinancialSummaryHTML}
-                    </div>
-                `);
+            `;
+
+            if (includeFinancialSummary && lastFinancialSummaryHTML) {
+                htmlContent += lastFinancialSummaryHTML;
             }
 
-            // 5. Add Full Stock List (Expected Items with Status)
-            printWindow.document.write('<h2 style="font-size: 16pt; margin-top: 20px; margin-bottom: 10px; font-weight: bold;">1. Expected Inventory Status (All Items)</h2>');
-            
-            // Clone the main table
-            const originalTable = document.getElementById('stockTable').cloneNode(true);
-            
-            // Apply print-friendly classes and cleanup dynamic classes
-            originalTable.classList.remove('min-w-full', 'divide-y', 'divide-gray-200');
-            originalTable.classList.add('print-table'); // Apply table print styles
-            originalTable.style.width = '100%'; // Ensure full width
+            htmlContent += tableHTML;
 
-            // Clean up row classes for print (remove hover/color which mess with print styles)
-            originalTable.querySelectorAll('tr').forEach(row => {
-                row.classList.remove('scanned-row', 'hover:bg-gray-50', 'scan-flash');
-            });
-            originalTable.querySelectorAll('th, td').forEach(cell => {
-                cell.style.backgroundColor = 'transparent';
-                cell.style.color = '#000';
-            });
-            
-            printWindow.document.write(originalTable.outerHTML);
+            printContainer.innerHTML = htmlContent;
 
-            // 6. Add Unexpected Items List
-            const unexpectedItemsArray = Array.from(unexpectedScans.values());
+            // 2. Add the container to the body for printing
+            document.body.appendChild(printContainer);
 
-            printWindow.document.write('<h2 style="font-size: 16pt; margin-top: 30px; margin-bottom: 10px; font-weight: bold;">2. Unexpected Scans / Unlisted Items</h2>');
-
-            if (unexpectedItemsArray.length > 0) {
-                let unexpectedTableHTML = `
-                    <table class="print-table">
-                        <thead>
-                            <tr>
-                                <th>Unexpected ID</th>
-                                <th>Scanned Count</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                `;
-                unexpectedItemsArray.forEach(item => {
-                    unexpectedTableHTML += `
-                        <tr>
-                            <td>${item.rawId}</td>
-                            <td>${item.count}</td>
-                        </tr>
-                    `;
-                });
-                unexpectedTableHTML += '</tbody></table>';
-                printWindow.document.write(unexpectedTableHTML);
-            } else {
-                printWindow.document.write('<p>No unexpected (unlisted) items were scanned.</p>');
-            }
-
-            // 7. Close and Print
-            printWindow.document.write('</div>');
-            printWindow.document.write('</body></html>');
-            printWindow.document.close();
-            
-            // Wait for content to render before printing
-            printWindow.onload = function() {
-                printWindow.focus();
-                printWindow.print();
-                printWindow.close();
+            // 3. FIX: Define cleanup function to be called AFTER the print dialog closes
+            const removePrintContainer = () => {
+                document.body.removeChild(printContainer);
+                // Remove the listener itself after it fires to prevent side effects
+                window.removeEventListener('afterprint', removePrintContainer); 
+                // Optionally re-open the modal
+                discrepancyModal.classList.remove('hidden');
             };
 
-            // Fallback in case onload doesn't fire immediately
-            setTimeout(() => {
-                 try {
-                     if (printWindow && !printWindow.closed) {
-                         printWindow.focus();
-                         printWindow.print();
-                         printWindow.close();
-                     }
-                 } catch(e) { /* Ignore error if window already closed */ }
-            }, 500);
-        }
-
-        // --- EXPORT FUNCTIONS (UNMODIFIED) ---
-
-        /**
-         * Exports the full list (expected + unexpected) to a CSV file.
-         */
-        function exportFullList() {
-            let csv = '';
+            // 4. Attach the cleanup function to the 'afterprint' event
+            window.addEventListener('afterprint', removePrintContainer); 
             
-            // 1. Expected Items Headers
-            const expectedHeaders = [...detectedHeaders, 'Expected Quantity', 'Scanned Count', 'Remaining'];
-            if (expectedStock.some(item => item.unitPrice > 0)) {
-                expectedHeaders.push('Unit Price');
-            }
-            csv += '--- EXPECTED INVENTORY ---\n';
-            csv += expectedHeaders.join(',') + '\n';
+            // 5. Trigger the print dialog
+            window.print();
+        }
 
-            // 2. Expected Items Data
-            expectedStock.forEach(item => {
-                const values = expectedHeaders.map(header => {
-                    if (header === 'Expected Quantity') return item.expectedQuantity;
-                    if (header === 'Scanned Count') return item.scannedCount;
-                    if (header === 'Remaining') return item.expectedQuantity - item.scannedCount;
-                    if (header === 'Unit Price') return formatValue(item.unitPrice, true);
 
-                    const value = item[header] || '';
-                    return `"${String(value).replace(/"/g, '""')}"`; // Handle commas and quotes in data
-                });
-                csv += values.join(',') + '\n';
-            });
-
-            // 3. Unexpected Items Headers & Data
-            csv += '\n--- UNEXPECTED SCANS ---\n';
-            csv += 'Unexpected ID,Scanned Count\n';
-
-            Array.from(unexpectedScans.values()).forEach(item => {
-                 csv += `"${String(item.rawId).replace(/"/g, '""')}",${item.count}\n`;
-            });
+        /**
+         * Prepares and triggers the print dialog for the missing items list.
+         */
+        function printMissingItems() {
+            // 1. Filter the relevant data
+            let missingItems = expectedStock.filter(item => (item.expectedQuantity - item.scannedCount) > 0);
+            let overScannedItems = expectedStock.filter(item => (item.expectedQuantity - item.scannedCount) < 0);
             
-            downloadCSV(csv, 'full_inventory_report.csv');
-        }
-
-        /**
-         * Exports only the unexpected items list to a CSV file.
-         */
-        function exportUnexpectedItems() {
-             let csv = 'Unexpected ID,Scanned Count\n';
-
-            Array.from(unexpectedScans.values()).forEach(item => {
-                 csv += `"${String(item.rawId).replace(/"/g, '""')}",${item.count}\n`;
-            });
+            // 2. Generate the report tables
+            const missingTableHTML = generateReportTable('Missing/Understocked Items', missingItems, true);
+            const overScannedTableHTML = generateReportTable('Over-Scanned Items (Expected ID Found, but Scanned Too Many)', overScannedItems, true);
             
-            downloadCSV(csv, 'unexpected_items_report.csv');
+            // 3. Combine content for printing
+            const reportContent = missingTableHTML + overScannedTableHTML;
+
+            // 4. Call the fixed triggerPrint utility
+            triggerPrint('Missing & Over-Scanned Items', reportContent, true);
         }
 
         /**
-         * Exports the full state as a JSON file.
+         * Prepares and triggers the print dialog for the unexpected items list.
          */
-        function exportFullListJSON() {
-            const data = {
-                metadata: {
-                    loadedHeaders: detectedHeaders,
-                    uniqueIdHeader: uniqueIdHeaderNameInput.value.trim(),
-                    quantityHeader: quantityHeaderNameInput.value.trim(),
-                    priceHeader: priceHeaderNameInput.value.trim(),
-                    currencySymbol: detectedCurrencySymbol,
-                    checkedBy: colleagueNameInput.value.trim(),
-                    exportDate: new Date().toISOString()
-                },
-                expectedStock: expectedStock,
-                unexpectedScans: Array.from(unexpectedScans.values())
-            };
-            
-            const json = JSON.stringify(data, null, 2);
-            downloadFile(json, 'full_inventory_report.json', 'application/json');
+        function printUnexpectedList() {
+            // 1. Prepare the relevant data
+            const unexpectedList = Array.from(unexpectedScans.values());
+
+            // 2. Generate the report table
+            const unexpectedTableHTML = generateReportTable('Unexpected Items (Not Found in Stock List)', unexpectedList, false);
+
+            // 3. Call the fixed triggerPrint utility (Financial Summary is not relevant for items not on the expected list)
+            triggerPrint('Unexpected Items', unexpectedTableHTML, false);
         }
+
+        // =========================================================================
+        // === FIX END ===
+        // =========================================================================
 
 
         /**
-         * Helper function to trigger a file download.
+         * Renders a temporary message below the scanner input.
+         * @param {string} messageText The message to display.
+         * @param {string} colorClass Tailwind class for color (e.g., 'text-red-500').
          */
-        function downloadCSV(csv, filename) {
-             const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-             downloadFile(blob, filename, 'text/csv');
-        }
-        
-        function downloadFile(content, filename, mimeType) {
-            const element = document.createElement('a');
-            element.setAttribute('href', `data:${mimeType};charset=utf-8,${encodeURIComponent(typeof content === 'string' ? content : content.toString())}`);
-            element.setAttribute('download', filename);
-            element.style.display = 'none';
-            document.body.appendChild(element);
-            element.click();
-            document.body.removeChild(element);
-        }
-
-
-        // --- UI UTILITIES ---
-
-        /**
-         * Clears any previous message and shows a new status message in the scanner box.
-         */
-        let statusTimeout;
-        function showMessage(message, colorClass = 'text-gray-500') {
-            clearTimeout(statusTimeout);
-            statusMessage.textContent = message;
+        function showMessage(messageText, colorClass) {
+            clearTimeout(window.scanTimeout);
+            statusMessage.textContent = messageText;
             statusMessage.className = `mt-3 text-sm font-medium h-5 ${colorClass}`;
-            statusTimeout = setTimeout(() => {
+            window.scanTimeout = setTimeout(() => {
                 statusMessage.textContent = '';
                 statusMessage.className = 'mt-3 text-sm font-medium h-5';
             }, 3000);
         }
-
+        
         /**
-         * Clears any previous message and shows a new status message in the load data box.
+         * Renders a temporary message below the load data buttons.
+         * @param {string} messageText The message to display.
+         * @param {string} colorClass Tailwind class for color (e.g., 'text-red-500').
          */
-        window.loadStatusTimeout; // Made global for access within loadStockData
-        function showLoadMessage(message, colorClass = 'text-gray-500') {
+        function showLoadMessage(messageText, colorClass) {
             clearTimeout(window.loadStatusTimeout);
-            loadStatusMessage.textContent = message;
+            loadStatusMessage.textContent = messageText;
             loadStatusMessage.className = `mt-3 text-sm font-medium h-5 ${colorClass}`;
             window.loadStatusTimeout = setTimeout(() => {
                 loadStatusMessage.textContent = '';
@@ -1390,27 +1310,10 @@
             }, 5000);
         }
 
+        // --- DEMO DATA & INITIALIZATION ---
 
         /**
-         * Filters the main stock table based on user input.
-         */
-        function filterTable() {
-            const filterText = filterInput.value.trim().toUpperCase();
-            const rows = stockTableBody.querySelectorAll('tr');
-
-            rows.forEach(row => {
-                const searchData = row.dataset.search || '';
-                if (searchData.includes(filterText)) {
-                    row.style.display = ''; 
-                } else {
-                    row.style.display = 'none';
-                }
-            });
-        }
-
-
-        /**
-         * Updates the Demo Mode badge visibility.
+         * Updates the demo mode badge visibility.
          */
         function updateDemoBadge() {
             if (isDemoData) {
@@ -1421,15 +1324,10 @@
         }
 
         /**
-         * Loads the initial demo data structure.
+         * Loads initial stock data for demo purposes.
          */
         function initializeWithInitialData() {
-            // Manually set headers for demo data
-            uniqueIdHeaderNameInput.value = 'Asset ID';
-            quantityHeaderNameInput.value = 'Expected Quantity';
-            priceHeaderNameInput.value = 'Unit Price';
-            
-            expectedStock = initialStockData;
+            expectedStock = initialStockData.map(item => ({ ...item })); // Deep clone
             detectedHeaders = initialHeaders;
             isDemoData = true;
 
@@ -1438,131 +1336,235 @@
                 stockMap.set(item.id, index);
             });
             unexpectedScans.clear();
+            stockDataTextarea.value = '';
+            lastScannedId = 'N/A';
+            lastScannedDisplay.textContent = lastScannedId;
+            detectedCurrencySymbol = '£'; // Default currency for demo data
             
-            // Manually detect currency symbol from first item
-            if (initialStockData.length > 0) {
-                 detectedCurrencySymbol = getCurrencySymbol(initialStockData[0]['Unit Price']);
-            }
-
+            // Set the headers in the input fields for the demo data
+            uniqueIdHeaderNameInput.value = 'Asset ID';
+            quantityHeaderNameInput.value = 'Expected Quantity';
+            priceHeaderNameInput.value = 'Unit Price';
+            
             renderTable();
-            // Do not clear the text area as no data was loaded from it
         }
 
-        // --- SESSION MANAGEMENT (LOCAL STORAGE) ---
+
+        // --- UTILITIES ---
 
         /**
-         * Saves the current state of the app to localStorage.
+         * Flashes a table row element to give visual feedback on a scan.
+         * @param {HTMLElement} rowElement The row to flash.
+         */
+        function flashRow(rowElement) {
+            rowElement.classList.add('scan-flash');
+            setTimeout(() => {
+                rowElement.classList.remove('scan-flash');
+            }, 300); // 300ms flash duration
+        }
+        
+        /**
+         * Filters the stock table based on the input text.
+         */
+        function filterTable() {
+            const filterText = filterInput.value.toUpperCase();
+            const rows = stockTableBody.getElementsByTagName('tr');
+            
+            for (let i = 0; i < rows.length; i++) {
+                const row = rows[i];
+                // Use the dataset to hold all searchable text for performance
+                const searchableText = row.dataset.search || '';
+                
+                if (searchableText.includes(filterText)) {
+                    row.style.display = '';
+                } else {
+                    row.style.display = 'none';
+                }
+            }
+        }
+
+        /**
+         * Saves the current application state to localStorage.
          */
         function saveState() {
             const state = {
                 expectedStock: expectedStock,
-                unexpectedScans: Array.from(unexpectedScans.entries()), // Maps need conversion
+                unexpectedScans: Array.from(unexpectedScans.entries()), // Maps cannot be directly stringified
                 detectedHeaders: detectedHeaders,
+                isDemoData: isDemoData,
                 lastScannedId: lastScannedId,
+                detectedCurrencySymbol: detectedCurrencySymbol,
+                colleagueName: colleagueNameInput.value,
+                // Save header inputs so they persist between sessions
                 uniqueIdHeaderName: uniqueIdHeaderNameInput.value,
                 quantityHeaderName: quantityHeaderNameInput.value,
-                priceHeaderName: priceHeaderNameInput.value,
-                colleagueName: colleagueNameInput.value,
-                detectedCurrencySymbol: detectedCurrencySymbol,
-                isDemoData: isDemoData
+                priceHeaderName: priceHeaderNameInput.value
             };
-            try {
-                localStorage.setItem('stockCheckState', JSON.stringify(state));
-            } catch (e) {
-                console.error("Could not save state to local storage:", e);
-            }
+            localStorage.setItem('stockCheckState', JSON.stringify(state));
         }
 
         /**
-         * Loads the previous state from localStorage.
+         * Loads the application state from localStorage.
          */
         function loadState() {
-            try {
-                const savedState = localStorage.getItem('stockCheckState');
-                if (savedState) {
-                    const state = JSON.parse(savedState);
+            const savedState = localStorage.getItem('stockCheckState');
+            if (savedState) {
+                const state = JSON.parse(savedState);
+                
+                expectedStock = state.expectedStock;
+                detectedHeaders = state.detectedHeaders;
+                isDemoData = state.isDemoData;
+                lastScannedId = state.lastScannedId;
+                detectedCurrencySymbol = state.detectedCurrencySymbol;
+                
+                // Restore headers to input fields
+                uniqueIdHeaderNameInput.value = state.uniqueIdHeaderName || '';
+                quantityHeaderNameInput.value = state.quantityHeaderName || '';
+                priceHeaderNameInput.value = state.priceHeaderName || '';
 
-                    expectedStock = state.expectedStock || [];
-                    unexpectedScans = new Map(state.unexpectedScans || []);
-                    detectedHeaders = state.detectedHeaders || [];
-                    lastScannedId = state.lastScannedId || 'N/A';
-                    detectedCurrencySymbol = state.detectedCurrencySymbol || '';
-                    isDemoData = state.isDemoData || false;
+                // Restore sign-off name
+                colleagueNameInput.value = state.colleagueName || '';
 
-                    // Restore input fields
-                    uniqueIdHeaderNameInput.value = state.uniqueIdHeaderName || '';
-                    quantityHeaderNameInput.value = state.quantityHeaderName || '';
-                    priceHeaderNameInput.value = state.priceHeaderName || '';
-                    colleagueNameInput.value = state.colleagueName || '';
+                // Rebuild Maps
+                stockMap.clear();
+                expectedStock.forEach((item, index) => {
+                    stockMap.set(item.id, index);
+                });
+                unexpectedScans = new Map(state.unexpectedScans);
 
-                    // Rebuild stockMap
-                    stockMap.clear();
-                    expectedStock.forEach((item, index) => {
-                        stockMap.set(item.id, index);
-                    });
-                    
-                    lastScannedDisplay.textContent = lastScannedId;
+                lastScannedDisplay.textContent = lastScannedId;
 
-                    renderTable();
-                    updateDemoBadge(); // Restore badge display
-                    if (expectedStock.length > 0) {
-                        showMessage('Session resumed successfully.', 'text-gray-500');
-                    } else if(isDemoData) {
-                         // Fallback for an empty but set demo state
-                         initializeWithInitialData();
-                         showMessage('Demo session resumed successfully.', 'text-yellow-700');
-                    }
-                    return;
-                }
-            } catch (e) {
-                console.error("Error loading state from local storage:", e);
-                // Clear corrupted state and proceed to load initial
-                localStorage.removeItem('stockCheckState');
+                renderTable();
+                updateDemoBadge();
+                showMessage(`State loaded for ${expectedStock.length} items. Ready to scan.`, 'text-blue-600');
+
+            } else {
+                // If no state exists, load demo data for a clean start
+                initializeWithInitialData();
+                saveState();
+                showMessage('Welcome! Demo data loaded automatically.', 'text-blue-600');
             }
-            
-            // If no state or error, load initial demo data
-            initializeWithInitialData();
-            updateDemoBadge();
-            saveState();
         }
 
         /**
-         * Resets the entire application state and clears local storage.
+         * Clears all local storage and reloads the initial state.
          */
         function resetAppAndClearStorage() {
-             if (!confirm("WARNING: This will clear ALL data, including your stock list, all scans, and all settings from your browser's memory. Are you sure you want to perform a FULL reset?")) {
+             if (!confirm('WARNING: Are you sure you want to completely RESET the app? This will clear all data, scans, and settings from your browser storage.')) {
                 return;
             }
-            
-            // Clear current data
-            expectedStock = [];
-            detectedHeaders = [];
-            stockMap.clear();
-            unexpectedScans.clear();
-            lastScannedId = 'N/A';
-            detectedCurrencySymbol = '';
+            localStorage.removeItem('stockCheckState');
             
             // Clear input fields
-            stockDataTextarea.value = '';
             uniqueIdHeaderNameInput.value = '';
             quantityHeaderNameInput.value = '';
             priceHeaderNameInput.value = '';
             colleagueNameInput.value = '';
+            stockDataTextarea.value = '';
 
-            // Clear storage
-            try {
-                localStorage.removeItem('stockCheckState');
-            } catch (e) {
-                console.error("Could not clear local storage:", e);
+            // Re-run initialization to load fresh demo data
+            loadState(); 
+            
+            showMessage('Application fully reset. All data cleared from storage.', 'text-red-600');
+        }
+
+        // --- EXPORT FUNCTIONS ---
+        // (No changes needed, kept for completeness)
+
+        /**
+         * Exports a list of items to a CSV file.
+         */
+        function exportToCSV(filename, list, columns) {
+            const csvRows = [];
+            
+            // 1. Get all unique headers (including custom fields like rawId/count if needed)
+            const headers = columns || detectedHeaders; 
+            
+            // Add custom headers if exporting a non-expected list
+            if (filename.includes('unexpected') && !columns) {
+                headers.push('Count (Unexpected)');
+                headers.push('Unique ID (Raw)');
+            } else if (filename.includes('full') && !columns) {
+                headers.push('Expected Quantity');
+                headers.push('Scanned Quantity');
+                headers.push('Remaining Quantity');
             }
+            
+            // Format headers for CSV
+            csvRows.push(headers.map(h => `"${h.replace(/"/g, '""')}"`).join(','));
 
-            // Reload default demo data and update UI
-            initializeWithInitialData();
-            updateDemoBadge();
-            renderTable();
-            saveState(); // Save the new, clean demo state
-            showLoadMessage('✅ Full application reset complete. Demo data loaded.', 'text-green-600');
-            scannerInput.focus();
+            // 2. Generate rows
+            list.forEach(item => {
+                const values = headers.map(header => {
+                    let value;
+                    if (header === 'Count (Unexpected)') {
+                         value = item.count || 0;
+                    } else if (header === 'Unique ID (Raw)') {
+                        value = item.rawId || item[uniqueIdHeaderNameInput.value.trim()] || '';
+                    } else if (header === 'Expected Quantity') {
+                        value = item.expectedQuantity || 0;
+                    } else if (header === 'Scanned Quantity') {
+                        value = item.scannedCount || 0;
+                    } else if (header === 'Remaining Quantity') {
+                         const remaining = item.expectedQuantity - item.scannedCount;
+                         value = remaining > 0 ? remaining : 0;
+                    } else {
+                        value = item[header] || '';
+                    }
+                    // Handle commas and quotes within values
+                    return `"${String(value).replace(/"/g, '""')}"`; 
+                });
+                csvRows.push(values.join(','));
+            });
+
+            // 3. Create Blob and download
+            const csvString = csvRows.join('\n');
+            const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a");
+            if (link.download !== undefined) { 
+                const url = URL.createObjectURL(blob);
+                link.setAttribute("href", url);
+                link.setAttribute("download", filename);
+                link.style.visibility = 'hidden';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            }
+        }
+
+        /**
+         * Exports the full list with current scan data to CSV.
+         */
+        function exportFullList() {
+            const filename = `Stock_Check_Full_Report_${new Date().toISOString().slice(0, 10)}.csv`;
+            exportToCSV(filename, expectedStock);
+        }
+
+        /**
+         * Exports the unexpected items list to CSV.
+         */
+        function exportUnexpectedItems() {
+             const unexpectedList = Array.from(unexpectedScans.values());
+            const filename = `Stock_Check_Unexpected_Items_${new Date().toISOString().slice(0, 10)}.csv`;
+            // For unexpected items, we only export the raw ID and the count
+            exportToCSV(filename, unexpectedList, ['Unique ID (Raw)', 'Count (Unexpected)']);
+        }
+        
+        /**
+         * Exports the full list with current scan data to JSON.
+         */
+        function exportFullListJSON() {
+            const filename = `Stock_Check_Full_Report_${new Date().toISOString().slice(0, 10)}.json`;
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify({ 
+                expectedStock: expectedStock,
+                unexpectedScans: Array.from(unexpectedScans.entries())
+            }, null, 2));
+            const downloadAnchorNode = document.createElement('a');
+            downloadAnchorNode.setAttribute("href", dataStr);
+            downloadAnchorNode.setAttribute("download", filename);
+            document.body.appendChild(downloadAnchorNode); 
+            downloadAnchorNode.click();
+            downloadAnchorNode.remove();
         }
 
 
@@ -1588,6 +1590,8 @@
 
             // NEW: Full Reset Button Listener
             document.getElementById('resetAppButton').addEventListener('click', resetAppAndClearStorage);
+            
+            // REMOVED 'Load Demo Button Listener' as logic is now in the button's HTML onclick attribute.
             
             scannerInput.focus(); 
         };
