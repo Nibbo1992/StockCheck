@@ -1,0 +1,76 @@
+/* Custom styles for permanent background color persistence */
+.scanned-row {
+    transition: background-color 0.3s ease;
+    /* Applies when scan count >= expected quantity */
+    background-color: #d1fae5; /* Light green */
+}
+.scanned-cell {
+    background-color: #34d399 !important; /* Tailwind green-400 */
+    color: #065f46; /* Tailwind green-900 */
+    font-weight: 600;
+}
+/* New style for the ephemeral flash on scan */
+.scan-flash {
+    background-color: #6ee7b7 !important; /* Brighter green */
+}
+/* Custom font for a clean look */
+body {
+    font-family: 'Inter', sans-serif;
+    background-color: #f3f4f6;
+}
+
+/* Styles for printing the discrepancy list */
+@media print {
+    /* FIX: Explicitly set A4 portrait size and margins */
+    @page {
+        size: A4 portrait;
+        margin: 1cm; 
+    }
+
+    body > *:not(.print-container) {
+        display: none;
+    }
+    .print-container {
+        display: block;
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        /* Rely on @page margin for padding */
+    }
+    .print-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 15px;
+        /* FIX: Force table to fit width */
+        table-layout: fixed; 
+    }
+    .print-table th, .print-table td {
+        border: 1px solid #ccc;
+        padding: 4px 6px; /* FIX: Reduced padding */
+        text-align: left;
+        font-size: 8pt; /* FIX: Reduced font size for better fit */
+        word-break: break-word; /* Allow text to wrap/break */
+    }
+    .print-table th {
+        background-color: #f3f4f6;
+    }
+    /* Ensure the financial summary prints correctly without the dynamic styles */
+    #financial-summary-print {
+        padding: 15px;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        margin-bottom: 20px;
+    }
+     /* FIX: Reduce financial summary text size */
+    #financial-summary-print p {
+        font-size: 8pt !important;
+    }
+    #financial-summary-print h4 {
+        font-size: 12pt !important;
+    }
+    #financial-summary-print .text-xl, 
+    #financial-summary-print .text-lg {
+        font-size: 10pt !important; /* Targets the large numbers */
+    }
+}
