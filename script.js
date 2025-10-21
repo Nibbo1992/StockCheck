@@ -700,6 +700,9 @@ function generateFinancialSummary() {
 
 /**
  * Generates a common HTML table for a list of items.
+ * @param {string} title The title of the report section.
+ * @param {Array<Object>} data The list of items to report on.
+ * @param {boolean} isMissingList Flag: true for expected item discrepancies (Missing/Over), false for unexpected items.
  */
 function generateReportTable(title, data, isMissingList = true) {
     if (data.length === 0) {
@@ -707,38 +710,45 @@ function generateReportTable(title, data, isMissingList = true) {
                 <p class="text-md text-gray-600 mb-6">No items found for this list. The count is zero. ✅</p>`;
     }
 
-    const headerRowHTML = detectedHeaders.map(h => `<th class="font-semibold text-gray-700">${h}</th>`).join('');
-    
-    let fixedHeaders = ['Expected Qty', 'Scanned Qty', 'Discrepancy'];
-    if (!isMissingList) { // For unexpected list
-        fixedHeaders = ['Count (Unexpected)'];
-    } else if (!quantityHeaderNameInput.value.trim()) {
-         // If no quantity header was loaded, simplify fixed headers for single-item assets
-         fixedHeaders = ['Status']; 
-    }
-
-    const fixedHeaderHTML = fixedHeaders.map(h => `<th class="font-semibold text-gray-700">${h}</th>`).join('');
-    
     const priceHeaderName = priceHeaderNameInput.value.trim();
-    const includePrice = !!priceHeaderName; 
+    const includePrice = !!priceHeaderName && isMissingList;
 
-    let priceHeaderHTML = '';
-    if (includePrice) {
-        priceHeaderHTML = `<th class="font-semibold text-gray-700">${priceHeaderName}</th>
-                           <th class="font-semibold text-gray-700">Value Missing/Over</th>`;
-    }
+    let headers = '';
+    let bodyRowsHTML = '';
 
-    const bodyRowsHTML = data.map(item => {
-        const dataCells = detectedHeaders.map(h => `<td>${item[h] || ''}</td>`).join('');
-        let fixedCells;
-        let priceCells = '';
+    if (isMissingList) {
+        // --- Expected Items Discrepancy List ---
+        
+        // Dynamic headers from the loaded file
+        const dynamicHeaders = detectedHeaders; 
+        const dynamicHeaderHTML = dynamicHeaders.map(h => `<th class="font-semibold text-gray-700">${h}</th>`).join('');
 
-        if (isMissingList) {
+        // Fixed headers for quantity/status
+        let fixedHeaders = ['Expected Qty', 'Scanned Qty', 'Discrepancy'];
+        if (!quantityHeaderNameInput.value.trim()) {
+             // If no quantity header was loaded, simplify fixed headers for single-item assets
+             fixedHeaders = ['Status']; 
+        }
+        const fixedHeaderHTML = fixedHeaders.map(h => `<th class="font-semibold text-gray-700">${h}</th>`).join('');
+
+        // Price headers
+        let priceHeaderHTML = '';
+        if (includePrice) {
+            priceHeaderHTML = `<th class="font-semibold text-gray-700">${priceHeaderName}</th>
+                               <th class="font-semibold text-gray-700">Value Missing/Over</th>`;
+        }
+        
+        headers = dynamicHeaderHTML + fixedHeaderHTML + priceHeaderHTML;
+
+        bodyRowsHTML = data.map(item => {
+            const dataCells = dynamicHeaders.map(h => `<td>${item[h] || ''}</td>`).join('');
+            let fixedCells;
+            let priceCells = '';
+
             const discrepancy = item.expectedQuantity - item.scannedCount;
             
-            let statusText = `${discrepancy} Missing`;
             if (!quantityHeaderNameInput.value.trim()) {
-                statusText = discrepancy > 0 ? 'MISSING' : 'OVER-SCANNED';
+                const statusText = discrepancy > 0 ? 'MISSING' : 'OVER-SCANNED';
                 fixedCells = `<td>${statusText}</td>`;
             } else {
                 fixedCells = `<td>${item.expectedQuantity}</td>
@@ -754,23 +764,32 @@ function generateReportTable(title, data, isMissingList = true) {
                               </td>`;
             }
 
-        } else { // Unexpected List
-            fixedCells = `<td class="font-semibold">${item.count}</td>`;
-        }
+            return `<tr>${dataCells}${fixedCells}${priceCells}</tr>`;
+        }).join('');
+        
+    } else {
+        // --- UNEXPECTED Items List (The FIX) ---
+        
+        // Only include the raw ID and the count
+        const unexpectedHeaders = ['Unique ID (Scanned)', 'Count (Unexpected)'];
+        headers = unexpectedHeaders.map(h => `<th class="font-semibold text-gray-700">${h}</th>`).join('');
 
-        return `<tr>${dataCells}${fixedCells}${priceCells}</tr>`;
-    }).join('');
-    
-    const totalTableCols = detectedHeaders.length + fixedHeaders.length + (includePrice ? 2 : 0);
+        bodyRowsHTML = data.map(item => {
+            // 'item' here is { rawId: string, count: number } from unexpectedScans.values()
+            return `<tr>
+                        <td class="font-mono">${item.rawId}</td>
+                        <td class="font-semibold">${item.count}</td>
+                    </tr>`;
+        }).join('');
+    }
+
 
     let html = `
         <h4 class="text-xl font-semibold text-gray-800 mb-4">${title} (${data.length} Items)</h4>
         <table class="print-table w-full border-collapse mb-8">
             <thead>
                 <tr>
-                    ${headerRowHTML}
-                    ${fixedHeaderHTML}
-                    ${priceHeaderHTML}
+                    ${headers}
                 </tr>
             </thead>
             <tbody>
